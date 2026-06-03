@@ -1,0 +1,10 @@
+{
+  "files": {
+    "main.js": "/meal-planner/static/js/main.ce61a943.js",
+    "index.html": "/meal-planner/index.html",
+    "main.ce61a943.js.map": "/meal-planner/static/js/main.ce61a943.js.map"
+  },
+  "entrypoints": [
+    "static/js/main.ce61a943.js"
+  ]
+}
