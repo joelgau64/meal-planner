@@ -283,7 +283,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
       {/* Actions */}
       <div style={{display:"flex",gap:8,marginTop:24,borderTop:"1px solid #1E293B",paddingTop:16,flexWrap:"wrap"}}>
         <button onClick={handleAddToCourses} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#0F172A",border:"1px solid #1E293B",borderRadius:8,color:"#94A3B8",cursor:"pointer",fontWeight:600,fontSize:13}}>
-          <Icon name="cart" size:15/> Courses
+          <Icon name="cart" size={15}/> Courses
         </button>
         <button onClick={()=>onAddToPlanning(recette,portions,"queue")} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#0F172A",border:"1px solid #6366F1",borderRadius:8,color:"#A5B4FC",cursor:"pointer",fontWeight:600,fontSize:13}}>
           <Icon name="queue" size={15}/> File d'attente
