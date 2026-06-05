@@ -398,8 +398,7 @@ function BatchImportModal({ onClose, onSaved }) {
   const addLog = (msg, type = "info") => setLog(prev => [...prev, { msg, type, t: Date.now() }]);
 
   const run = async () => {
-    const lines = urls.split("
-").map(l => l.trim()).filter(l => l.includes("samsungfood.com/recipes/") || l.startsWith("http"));
+const lines = urls.split("\n").map(l => l.trim()).filter(l => l.includes("samsungfood.com/recipes/") || l.startsWith("http"));
     if (!lines.length) return;
     setRunning(true);
     setLog([]);
