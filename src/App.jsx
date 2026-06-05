@@ -398,7 +398,7 @@ function BatchImportModal({ onClose, onSaved }) {
   const addLog = (msg, type = "info") => setLog(prev => [...prev, { msg, type, t: Date.now() }]);
 
   const run = async () => {
-const lines = urls.split("\n").map(l => l.trim()).filter(l => l.includes("samsungfood.com/recipes/") || l.startsWith("http"));
+    const lines = urls.split("\n").map(l => l.trim()).filter(l => l.includes("samsungfood.com/recipes/") || l.startsWith("http"));
     if (!lines.length) return;
     setRunning(true);
     setLog([]);
@@ -444,9 +444,7 @@ Retourne ce JSON: {"nom":"...","categorie":"Déjeuner|Dîner|Petit-déjeuner|Sna
       <Field label="URLs Samsung Food (une par ligne)">
         <textarea style={{ ...inputStyle, minHeight: 140, resize: "vertical", fontSize: 12 }}
           value={urls} onChange={e => setUrls(e.target.value)}
-          placeholder={"https://app.samsungfood.com/recipes/101fd4fd...
-https://app.samsungfood.com/recipes/1016196f...
-..."} />
+          placeholder={"https://app.samsungfood.com/recipes/101fd4fd...\nhttps://app.samsungfood.com/recipes/1016196f...\n..."} />
       </Field>
 
       {total > 0 && (
