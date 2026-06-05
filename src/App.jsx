@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const NOTION_MCP = "https://mcp.notion.com/mcp";
 const DB_RECETTES = "9b50c853-33c1-44f8-ac7c-69a575f3f143";
 const DB_PLANNING = "93ddc644-acf0-4c22-9131-1a35c0cbbcf4";
 const DB_COURSES = "2cc46964-341a-449f-ae67-520a85d9a65f";
@@ -11,34 +10,121 @@ const MOMENT_COLORS = { "Petit-déjeuner": "#F59E0B", "Déjeuner": "#3B82F6", "D
 const CAT_COLORS = { "Fruits & Légumes": "#16A34A", "Viandes & Poissons": "#DC2626", "Produits laitiers": "#2563EB", "Épicerie": "#EA580C", "Surgelés": "#7C3AED", "Boissons": "#0891B2", "Autre": "#6B7280" };
 const EMPTY_FORM = { nom: "", categorie: "Dîner", temps: "", portions: 2, ingredients: "", instructions: "", tags: [], note: "***" };
 
-const NORMALIZE_PROMPT = `Tu es un chef cuisinier français expert. Prends cette recette et retourne UNIQUEMENT un JSON valide (sans backticks) avec:
-- Tout traduit en français
-- Les mesures converties en système métrique français (g, ml, cl, L — pas de cups, oz, tbsp, tsp, lb. 1 cup=240ml, 1 tbsp=15ml, 1 tsp=5ml, 1 oz=28g, 1 lb=450g)
-- Les noms d'ingrédients normalisés en français standard (ex: cilantro→coriandre, capsicum→poivron, eggplant→aubergine, zucchini→courgette, shrimp→crevettes)
-Format: {"nom":"...","categorie":"Déjeuner","temps":30,"portions":4,"ingredients":"liste normalisée","instructions":"étapes","tags":[],"note":"***"}`;
+// ── Session cache ─────────────────────────────────────────────────────────────
+const cache = { recettes: null, planning: null, courses: null };
+const cacheTime = { recettes: 0, planning: 0, courses: 0 };
+const CACHE_TTL = 5 * 60 * 1000;
+function getCached(key) { return cache[key] && Date.now() - cacheTime[key] < CACHE_TTL ? cache[key] : null; }
+function setCache(key, data) { cache[key] = data; cacheTime[key] = Date.now(); }
 
-// ── API ───────────────────────────────────────────────────────────────────────
-const API_URL = "/api/claude";
-
-async function callClaude(systemPrompt, userPrompt) {
-  const res = await fetch(API_URL, {
+// ── Notion API (direct, no Claude) ───────────────────────────────────────────
+async function notionQuery(dbId, filter) {
+  const body = filter ? { filter } : {};
+  const res = await fetch(`/api/notion?path=/v1/databases/${dbId}/query`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1500, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], mcp_servers: [{ type: "url", url: NOTION_MCP, name: "notion" }] }),
+    body: JSON.stringify(body),
   });
   return res.json();
 }
 
-async function claudeJSON(system, user) {
-  const res = await fetch(API_URL, {
+async function notionCreate(dbId, properties) {
+  const res = await fetch(`/api/notion?path=/v1/pages`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1500, system, messages: [{ role: "user", content: user }] }),
+    body: JSON.stringify({ parent: { database_id: dbId }, properties }),
+  });
+  return res.json();
+}
+
+async function notionUpdate(pageId, properties) {
+  const res = await fetch(`/api/notion?path=/v1/pages/${pageId}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ properties }),
+  });
+  return res.json();
+}
+
+// ── Notion property helpers ───────────────────────────────────────────────────
+function notionText(s) { return { rich_text: [{ text: { content: String(s || "").slice(0, 2000) } }] }; }
+function notionTitle(s) { return { title: [{ text: { content: String(s || "") } }] }; }
+function notionNumber(n) { return { number: Number(n) || 0 }; }
+function notionSelect(s) { return s ? { select: { name: String(s) } } : { select: null }; }
+function notionDate(d) { return d ? { date: { start: d } } : { date: null }; }
+function notionCheckbox(b) { return { checkbox: !!b }; }
+
+function getTitle(page) {
+  const t = page.properties;
+  for (const key of Object.keys(t)) {
+    if (t[key].type === "title" && t[key].title?.[0]?.plain_text) return t[key].title[0].plain_text;
+  }
+  return "";
+}
+function getText(prop) { return prop?.rich_text?.[0]?.plain_text || ""; }
+function getSelect(prop) { return prop?.select?.name || ""; }
+function getNumber(prop) { return prop?.number || 0; }
+function getCheckbox(prop) { return prop?.checkbox || false; }
+function getDate(prop) { return prop?.date?.start || null; }
+
+function parseRecette(page) {
+  const p = page.properties;
+  return {
+    id: page.id,
+    nom: getTitle(page),
+    categorie: getSelect(p["Catégorie"]),
+    temps: getNumber(p["Temps de préparation"]),
+    portions: getNumber(p["Portions"]),
+    ingredients: getText(p["Ingrédients"]),
+    instructions: getText(p["Instructions"]),
+    note: getSelect(p["Note"]),
+    likes: getNumber(p["Likes"]),
+    dislikes: getNumber(p["Dislikes"]),
+    fois_cuisinee: getNumber(p["Fois cuisinée"]),
+    derniere_cuisson: getDate(p["Dernière cuisson"]),
+  };
+}
+
+function parsePlanning(page) {
+  const p = page.properties;
+  return {
+    id: page.id,
+    repas: getTitle(page),
+    date: getDate(p["Date"]),
+    moment: getSelect(p["Moment"]),
+    recette: getText(p["Recette"]),
+    portions: getNumber(p["Portions"]),
+    notes: getText(p["Notes"]),
+    fait: getCheckbox(p["Acheté"]),
+  };
+}
+
+function parseCourse(page) {
+  const p = page.properties;
+  return {
+    id: page.id,
+    article: getTitle(page),
+    categorie: getSelect(p["Catégorie"]),
+    quantite: getText(p["Quantité"]),
+    achete: getCheckbox(p["Acheté"]),
+    semaine: getText(p["Semaine"]),
+  };
+}
+
+// ── Claude API (only for AI features) ────────────────────────────────────────
+async function claudeJSON(system, user, withSearch = false) {
+  const body = {
+    model: "claude-sonnet-4-5", max_tokens: 1500,
+    system, messages: [{ role: "user", content: user }],
+  };
+  if (withSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+  const res = await fetch("/api/claude", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
   const data = await res.json();
   return parseJSON((data.content || []).filter(b => b.type === "text").map(b => b.text).join(""));
 }
 
 async function claudeVision(prompt, base64, mediaType) {
-  const res = await fetch(API_URL, {
+  const res = await fetch("/api/claude", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1500, system: "Tu es un chef cuisinier expert. Retourne UNIQUEMENT un JSON valide, sans backticks.", messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mediaType, data: base64 } }, { type: "text", text: prompt }] }] }),
   });
@@ -46,7 +132,6 @@ async function claudeVision(prompt, base64, mediaType) {
   return parseJSON((data.content || []).filter(b => b.type === "text").map(b => b.text).join(""));
 }
 
-function extractText(data) { return (data?.content || []).filter(b => b.type === "text").map(b => b.text).join("\n"); }
 function parseJSON(text) { try { return JSON.parse(text.replace(/```json\n?|```\n?/g, "").trim()); } catch { return null; } }
 
 const RECIPE_JSON_PROMPT = `Retourne exactement ce JSON sans backticks:
@@ -70,14 +155,14 @@ const Icon = ({ name, size = 18 }) => {
     thumb_up: <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/><path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3" fill="none" stroke="currentColor" strokeWidth="2"/></svg>,
     thumb_down: <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0122 4v7a2.31 2.31 0 01-2.33 2H17" fill="none" stroke="currentColor" strokeWidth="2"/></svg>,
     chef: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 13.87A4 4 0 017.41 6a5.11 5.11 0 0111.18 0A4 4 0 0118 13.87V21H6z"/><line x1="6" y1="17" x2="18" y2="17"/></svg>,
-    sort: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>,
-    normalize: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>,
+    refresh: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>,
+    sparkle2: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/></svg>,
     import: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
   };
   return icons[name] || null;
 };
 
-// ── UI ────────────────────────────────────────────────────────────────────────
+// ── UI primitives ─────────────────────────────────────────────────────────────
 function Spinner({ label = "Chargement..." }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 40, color: "#94A3B8" }}>
@@ -123,18 +208,12 @@ const inputStyle = { width: "100%", background: "#1E293B", border: "1px solid #3
 const btnPrimary = { padding: "12px", background: "#6366F1", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", width: "100%", marginTop: 8 };
 const btnDisabled = { ...btnPrimary, background: "#1E293B", color: "#475569", cursor: "default" };
 
-// ── Score display ─────────────────────────────────────────────────────────────
 function ScoreBadge({ score }) {
   if (score === null || score === undefined) return null;
   const color = score > 0 ? "#4ADE80" : score < 0 ? "#F87171" : "#64748B";
-  return (
-    <span style={{ fontSize: 11, fontWeight: 700, color, background: `${color}22`, padding: "2px 7px", borderRadius: 10 }}>
-      {score > 0 ? `+${score}` : score}
-    </span>
-  );
+  return <span style={{ fontSize: 11, fontWeight: 700, color, background: `${color}22`, padding: "2px 7px", borderRadius: 10 }}>{score > 0 ? `+${score}` : score}</span>;
 }
 
-// ── Days since ────────────────────────────────────────────────────────────────
 function DaysSince({ date }) {
   if (!date) return <span style={{ fontSize: 11, color: "#475569" }}>jamais cuisiné</span>;
   const days = Math.floor((new Date() - new Date(date)) / 86400000);
@@ -142,7 +221,6 @@ function DaysSince({ date }) {
   return <span style={{ fontSize: 11, color }}>il y a {days}j</span>;
 }
 
-// ── Recipe Form ───────────────────────────────────────────────────────────────
 function RecipeForm({ form, setForm, saving, onSave, analyzing }) {
   const isReady = form.nom && !analyzing && !saving;
   return (
@@ -164,18 +242,8 @@ function RecipeForm({ form, setForm, saving, onSave, analyzing }) {
       </div>
       <Field label="Ingrédients"><textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" }} value={form.ingredients} onChange={e => setForm(f => ({ ...f, ingredients: e.target.value }))} placeholder="200g poulet, 2 gousses d'ail..." /></Field>
       <Field label="Instructions"><textarea style={{ ...inputStyle, minHeight: 100, resize: "vertical" }} value={form.instructions} onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} placeholder="1. Préchauffer le four..." /></Field>
-      <Field label="Tags">
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {["Végétarien", "Vegan", "Sans gluten", "Rapide", "Fait maison"].map(tag => (
-            <button key={tag} onClick={() => setForm(f => ({ ...f, tags: f.tags.includes(tag) ? f.tags.filter(t => t !== tag) : [...f.tags, tag] }))}
-              style={{ padding: "5px 12px", borderRadius: 16, fontSize: 12, cursor: "pointer", border: "1px solid", borderColor: form.tags.includes(tag) ? "#6366F1" : "#334155", background: form.tags.includes(tag) ? "#312E81" : "transparent", color: form.tags.includes(tag) ? "#A5B4FC" : "#64748B" }}>
-              {tag}
-            </button>
-          ))}
-        </div>
-      </Field>
       <button onClick={onSave} disabled={!isReady} style={isReady ? btnPrimary : btnDisabled}>
-        {saving ? "Enregistrement..." : analyzing ? "Analyse en cours..." : "Sauvegarder dans Notion"}
+        {saving ? "Enregistrement..." : analyzing ? "Analyse en cours..." : "Sauvegarder"}
       </button>
     </>
   );
@@ -188,7 +256,6 @@ const METHODS = [
   { id: "url", label: "URL", icon: "link", color: "#10B981" },
   { id: "ai", label: "Générer avec l'IA", icon: "sparkle", color: "#EC4899" },
   { id: "ingredients", label: "Par ingrédients", icon: "chef", color: "#14B8A6" },
-  { id: "batch", label: "Import Samsung Food", icon: "import", color: "#F97316" },
 ];
 
 function AddRecipeModal({ onClose, onSaved }) {
@@ -197,7 +264,6 @@ function AddRecipeModal({ onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [photoPreview, setPhotoPreview] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
   const [url, setUrl] = useState("");
   const [prompt, setPrompt] = useState("");
   const fileInputRef = useRef(null);
@@ -221,7 +287,8 @@ function AddRecipeModal({ onClose, onSaved }) {
     setAnalyzing(true);
     const result = await claudeJSON(
       "Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",
-      `Visite cette URL et extrais la recette en français avec mesures métriques: ${url}\n\n${RECIPE_JSON_PROMPT}`
+      `Visite cette URL et extrais la recette en français avec mesures métriques: ${url}\n\n${RECIPE_JSON_PROMPT}`,
+      true
     );
     if (result) setForm(f => ({ ...f, ...result, tags: Array.isArray(result.tags) ? result.tags : f.tags }));
     setAnalyzing(false);
@@ -230,28 +297,33 @@ function AddRecipeModal({ onClose, onSaved }) {
   const generateFromPrompt = async () => {
     if (!prompt) return;
     setAnalyzing(true);
-    const isIngredientSearch = method === "ingredients";
-    const systemPrompt = isIngredientSearch
-      ? "Tu es un chef cuisinier créatif français. L'utilisateur te donne des ingrédients qu'il a sous la main et tu proposes une recette qui les utilise. Retourne UNIQUEMENT un JSON valide, sans backticks."
-      : "Tu es un chef cuisinier créatif français. Retourne UNIQUEMENT un JSON valide, sans backticks.";
-    const userPrompt = isIngredientSearch
-      ? `L'utilisateur a ces ingrédients disponibles: "${prompt}". Propose une recette créative et savoureuse qui les utilise (tu peux ajouter quelques ingrédients basiques de placard comme sel, poivre, huile, ail).
-
-${RECIPE_JSON_PROMPT}`
-      : `Génère une recette pour: "${prompt}"
-
-${RECIPE_JSON_PROMPT}`;
-    const result = await claudeJSON(systemPrompt, userPrompt);
+    const isIngredients = method === "ingredients";
+    const result = await claudeJSON(
+      "Tu es un chef cuisinier créatif français. Retourne UNIQUEMENT un JSON valide, sans backticks.",
+      isIngredients
+        ? `L'utilisateur a ces ingrédients: "${prompt}". Propose une recette créative qui les utilise.\n\n${RECIPE_JSON_PROMPT}`
+        : `Génère une recette pour: "${prompt}"\n\n${RECIPE_JSON_PROMPT}`
+    );
     if (result) setForm(f => ({ ...f, ...result, tags: Array.isArray(result.tags) ? result.tags : f.tags }));
     setAnalyzing(false);
   };
 
   const save = async () => {
     setSaving(true);
-    await callClaude("Tu crées des pages Notion. Confirme avec OK.",
-      `Crée une page dans "${DB_RECETTES}" avec: Nom: "${form.nom}", Catégorie: "${form.categorie}", Temps de préparation: ${form.temps || 0}, Portions: ${form.portions}, Ingrédients: "${form.ingredients}", Instructions: "${form.instructions}", Tags: ${JSON.stringify(form.tags)}, Note: "${form.note}", Likes: 0, Dislikes: 0, "Fois cuisinée": 0`
-    );
+    await notionCreate(DB_RECETTES, {
+      "Nom": notionTitle(form.nom),
+      "Catégorie": notionSelect(form.categorie),
+      "Temps de préparation": notionNumber(form.temps),
+      "Portions": notionNumber(form.portions),
+      "Ingrédients": notionText(form.ingredients),
+      "Instructions": notionText(form.instructions),
+      "Note": notionSelect(form.note),
+      "Likes": notionNumber(0),
+      "Dislikes": notionNumber(0),
+      "Fois cuisinée": notionNumber(0),
+    });
     setSaving(false);
+    setCache("recettes", null); // invalidate
     onSaved("Recette ajoutée ✓");
     onClose();
   };
@@ -263,11 +335,11 @@ ${RECIPE_JSON_PROMPT}`;
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           {METHODS.map(m => (
             <button key={m.id} onClick={() => setMethod(m.id)}
-              style={{ padding: "20px 16px", background: "#0A0F1E", border: "1px solid #1E293B", borderRadius: 12, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}
+              style={{ padding: "18px 12px", background: "#0A0F1E", border: "1px solid #1E293B", borderRadius: 12, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = m.color; e.currentTarget.style.background = `${m.color}11`; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "#1E293B"; e.currentTarget.style.background = "#0A0F1E"; }}>
-              <div style={{ width: 44, height: 44, borderRadius: "50%", background: `${m.color}22`, display: "flex", alignItems: "center", justifyContent: "center", color: m.color }}><Icon name={m.icon} size={20} /></div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#F8FAFC" }}>{m.label}</span>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: `${m.color}22`, display: "flex", alignItems: "center", justifyContent: "center", color: m.color }}><Icon name={m.icon} size={18} /></div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#F8FAFC", textAlign: "center" }}>{m.label}</span>
             </button>
           ))}
         </div>
@@ -281,14 +353,15 @@ ${RECIPE_JSON_PROMPT}`;
     return (
       <Modal title="Recette depuis une photo" onClose={onClose} wide>
         {backBtn}
-        <div onClick={() => fileInputRef.current?.click()} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
-          onDrop={e => { e.preventDefault(); setDragOver(false); handlePhotoFile(e.dataTransfer.files[0]); }}
-          style={{ marginBottom: 20, borderRadius: 12, overflow: "hidden", cursor: "pointer", border: `2px dashed ${dragOver ? "#F59E0B" : photoPreview ? "#F59E0B" : "#1E293B"}`, background: dragOver ? "#1C1200" : "#0A0F1E" }}>
+        <div onClick={() => fileInputRef.current?.click()}
+          onDrop={e => { e.preventDefault(); handlePhotoFile(e.dataTransfer.files[0]); }}
+          onDragOver={e => e.preventDefault()}
+          style={{ marginBottom: 20, borderRadius: 12, overflow: "hidden", cursor: "pointer", border: `2px dashed ${photoPreview ? "#F59E0B" : "#1E293B"}`, background: "#0A0F1E" }}>
           <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handlePhotoFile(e.target.files[0])} />
           {photoPreview ? (
             <div style={{ position: "relative" }}>
               <img src={photoPreview} alt="preview" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
-              {analyzing && <div style={{ position: "absolute", inset: 0, background: "rgba(2,6,23,0.8)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}><div style={{ animation: "spin 1s linear infinite", color: "#F59E0B" }}><Icon name="loader" size={28} /></div><span style={{ color: "#FDE68A", fontSize: 13, fontWeight: 600 }}>Analyse...</span></div>}
+              {analyzing && <div style={{ position: "absolute", inset: 0, background: "rgba(2,6,23,0.8)", display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}><div style={{ animation: "spin 1s linear infinite", color: "#F59E0B" }}><Icon name="loader" size={24} /></div><span style={{ color: "#FDE68A", fontSize: 13, fontWeight: 600 }}>Analyse...</span></div>}
               {!analyzing && <div style={{ position: "absolute", bottom: 8, left: 8, background: "#4ADE80", borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 700, color: "#022c22" }}>✓ Recette reconnue</div>}
             </div>
           ) : (
@@ -299,7 +372,7 @@ ${RECIPE_JSON_PROMPT}`;
             </div>
           )}
         </div>
-        <RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing} />
+        {(photoPreview && !analyzing) && <RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing} />}
       </Modal>
     );
   }
@@ -322,20 +395,26 @@ ${RECIPE_JSON_PROMPT}`;
     );
   }
 
-  if (method === "ai") {
+  if (method === "ai" || method === "ingredients") {
+    const color = method === "ai" ? "#EC4899" : "#14B8A6";
+    const placeholder = method === "ai" ? "Ex: pasta crémeuse au saumon fumé, rapide..." : "Ex: j'ai des courgettes, du parmesan et des pâtes...";
+    const suggestions = method === "ai"
+      ? ["Repas rapide pour 2", "Dessert chocolat", "Végétarien équilibré", "Plat d'hiver réconfortant"]
+      : ["poulet + riz", "saumon + crème", "aubergines + tomates", "œufs + fromage"];
     return (
-      <Modal title="Générer avec l'IA" onClose={onClose} wide>
+      <Modal title={method === "ai" ? "Générer avec l'IA" : "Recherche par ingrédients"} onClose={onClose} wide>
         {backBtn}
-        <Field label="Décris la recette que tu veux">
+        <Field label={method === "ai" ? "Décris la recette" : "Quels ingrédients as-tu ?"}>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" }} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Ex: pasta crémeuse au saumon fumé, rapide, sans gluten..." />
+            <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" }} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder={placeholder} />
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {["Repas rapide pour 2", "Dessert chocolat", "Végétarien équilibré", "Plat d'hiver réconfortant"].map(s => (
-                <button key={s} onClick={() => setPrompt(s)} style={{ padding: "5px 12px", borderRadius: 16, fontSize: 11, cursor: "pointer", border: "1px solid #334155", background: "transparent", color: "#64748B" }}>{s}</button>
+              {suggestions.map(s => (
+                <button key={s} onClick={() => setPrompt(method === "ingredients" ? `J'ai ${s}` : s)}
+                  style={{ padding: "5px 12px", borderRadius: 16, fontSize: 11, cursor: "pointer", border: "1px solid #334155", background: "transparent", color: "#64748B" }}>{s}</button>
               ))}
             </div>
             <button onClick={generateFromPrompt} disabled={!prompt || analyzing}
-              style={{ padding: "11px 16px", background: prompt && !analyzing ? "#EC4899" : "#1E293B", border: "none", borderRadius: 8, color: prompt && !analyzing ? "#fff" : "#475569", fontWeight: 600, fontSize: 13, cursor: prompt && !analyzing ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              style={{ padding: "11px 16px", background: prompt && !analyzing ? color : "#1E293B", border: "none", borderRadius: 8, color: prompt && !analyzing ? "#fff" : "#475569", fontWeight: 600, fontSize: 13, cursor: prompt && !analyzing ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               {analyzing ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}><Icon name="loader" size={14} /></span> Génération...</> : <><Icon name="sparkle" size={14} /> Générer</>}
             </button>
           </div>
@@ -345,132 +424,10 @@ ${RECIPE_JSON_PROMPT}`;
     );
   }
 
-  // ── Ingredients search method ──────────────────────────────────────────────
-  if (method === "ingredients") {
-    return (
-      <Modal title="Recherche par ingrédients" onClose={onClose} wide>
-        {backBtn}
-        <Field label="Quels ingrédients as-tu ?">
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" }} value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              placeholder="Ex: j'ai des courgettes, du parmesan et des pâtes..." />
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {["poulet + riz", "saumon + crème", "aubergines + tomates", "œufs + fromage"].map(s => (
-                <button key={s} onClick={() => setPrompt(`J'ai ${s}`)}
-                  style={{ padding: "5px 12px", borderRadius: 16, fontSize: 11, cursor: "pointer", border: "1px solid #334155", background: "transparent", color: "#64748B" }}>{s}</button>
-              ))}
-            </div>
-            <button onClick={generateFromPrompt} disabled={!prompt || analyzing}
-              style={{ padding: "11px 16px", background: prompt && !analyzing ? "#14B8A6" : "#1E293B", border: "none", borderRadius: 8, color: prompt && !analyzing ? "#fff" : "#475569", fontWeight: 600, fontSize: 13, cursor: prompt && !analyzing ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              {analyzing ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}><Icon name="loader" size={14} /></span> Recherche...</> : <><Icon name="search_ing" size={14} /> Trouver une recette</>}
-            </button>
-          </div>
-        </Field>
-        {form.nom && <RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing} />}
-      </Modal>
-    );
-  }
-
-  // ── Samsung Food batch import ───────────────────────────────────────────────
-  if (method === "batch") {
-    return (
-      <BatchImportModal onClose={onClose} onSaved={onSaved} />
-    );
-  }
-
   return (
     <Modal title="Saisie manuelle" onClose={onClose} wide>
       {backBtn}
       <RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={false} />
-    </Modal>
-  );
-}
-
-// ── Batch Import Modal ────────────────────────────────────────────────────────
-function BatchImportModal({ onClose, onSaved }) {
-  const [urls, setUrls] = useState("");
-  const [running, setRunning] = useState(false);
-  const [log, setLog] = useState([]);
-  const [done, setDone] = useState(0);
-  const [total, setTotal] = useState(0);
-
-  const addLog = (msg, type = "info") => setLog(prev => [...prev, { msg, type, t: Date.now() }]);
-
-  const run = async () => {
-    const lines = urls.split("\n").map(l => l.trim()).filter(l => l.includes("samsungfood.com/recipes/") || l.startsWith("http"));
-    if (!lines.length) return;
-    setRunning(true);
-    setLog([]);
-    setDone(0);
-    setTotal(lines.length);
-
-    for (const url of lines) {
-      addLog(`Fetch: ${url.split("/").pop().slice(0, 20)}...`);
-      try {
-        // Ask Claude to fetch the Samsung Food page and extract recipe data
-        const result = await claudeJSON(
-          "Tu es un assistant qui extrait des recettes depuis des pages web. Retourne UNIQUEMENT un JSON valide, sans backticks. Si tu ne peux pas accéder à la page, reconstitue la recette depuis le titre de l'URL en français avec mesures métriques.",
-          `Accède à cette URL Samsung Food et extrais la recette complète avec ingrédients et instructions: ${url}
-          
-Retourne ce JSON: {"nom":"...","categorie":"Déjeuner|Dîner|Petit-déjeuner|Snack|Dessert","temps":30,"portions":4,"ingredients":"liste complète en français avec quantités en g/ml","instructions":"étapes numérotées en français","tags":[],"note":"***"}`
-        );
-
-        if (result?.nom) {
-          await callClaude("Tu crées des pages Notion. Réponds OK.",
-            `Crée dans "${DB_RECETTES}": Nom: "${result.nom}", Catégorie: "${result.categorie || "Dîner"}", "Temps de préparation": ${result.temps || 0}, Portions: ${result.portions || 4}, Ingrédients: "${result.ingredients || ""}", Instructions: "${result.instructions || ""}", Note: "${result.note || "***"}", Likes: 0, Dislikes: 0, "Fois cuisinée": 0`
-          );
-          addLog(`✓ ${result.nom}`, "success");
-        } else {
-          addLog(`⚠ Impossible d'extraire depuis ${url.split("/").pop().slice(0, 20)}`, "warn");
-        }
-      } catch (e) {
-        addLog(`✗ Erreur: ${e.message}`, "error");
-      }
-      setDone(d => d + 1);
-    }
-
-    setRunning(false);
-    onSaved(`Import terminé — ${lines.length} recettes traitées ✓`);
-  };
-
-  const logColors = { info: "#64748B", success: "#4ADE80", warn: "#F59E0B", error: "#F87171" };
-
-  return (
-    <Modal title="Import Samsung Food" onClose={onClose} wide>
-      <p style={{ color: "#64748B", fontSize: 13, marginBottom: 16, marginTop: 0 }}>
-        Colle les URLs Samsung Food (une par ligne). L'app va fetcher chaque recette et l'importer dans Notion automatiquement.
-      </p>
-      <Field label="URLs Samsung Food (une par ligne)">
-        <textarea style={{ ...inputStyle, minHeight: 140, resize: "vertical", fontSize: 12 }}
-          value={urls} onChange={e => setUrls(e.target.value)}
-          placeholder={"https://app.samsungfood.com/recipes/101fd4fd...\nhttps://app.samsungfood.com/recipes/1016196f...\n..."} />
-      </Field>
-
-      {total > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <span style={{ fontSize: 12, color: "#94A3B8" }}>Progression</span>
-            <span style={{ fontSize: 12, color: "#94A3B8" }}>{done}/{total}</span>
-          </div>
-          <div style={{ background: "#1E293B", borderRadius: 20, height: 6, overflow: "hidden" }}>
-            <div style={{ background: "#F97316", height: "100%", width: `${(done / total) * 100}%`, borderRadius: 20, transition: "width 0.3s" }} />
-          </div>
-        </div>
-      )}
-
-      {log.length > 0 && (
-        <div style={{ background: "#050D1A", border: "1px solid #1E293B", borderRadius: 8, padding: "10px 12px", maxHeight: 180, overflowY: "auto", marginBottom: 16 }}>
-          {log.map((l, i) => (
-            <div key={i} style={{ fontSize: 11, color: logColors[l.type], marginBottom: 2, fontFamily: "monospace" }}>{l.msg}</div>
-          ))}
-        </div>
-      )}
-
-      <button onClick={run} disabled={running || !urls.trim()}
-        style={{ width: "100%", padding: "12px", background: !running && urls.trim() ? "#F97316" : "#1E293B", border: "none", borderRadius: 8, color: !running && urls.trim() ? "#fff" : "#475569", fontWeight: 700, fontSize: 14, cursor: !running && urls.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        {running ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}><Icon name="loader" size={16} /></span> Import en cours ({done}/{total})...</> : <><Icon name="import" size={16} /> Lancer l'import</>}
-      </button>
     </Modal>
   );
 }
@@ -484,16 +441,17 @@ function RecettesTab({ toast }) {
   const [filter, setFilter] = useState("Toutes");
   const [sortBy, setSortBy] = useState("score");
   const [voting, setVoting] = useState(null);
-  const [normalizing, setNormalizing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const cached = getCached("recettes");
+    if (cached && !force) { setRecettes(cached); setLoading(false); return; }
     setLoading(true);
-    const data = await callClaude(
-      "Tu interroges Notion. Réponds UNIQUEMENT en JSON valide, sans texte.",
-      `Lis toutes les pages de "${DB_RECETTES}". Retourne un tableau JSON: [{id, nom, categorie, temps, portions, ingredients, instructions, tags, note, likes, dislikes, "fois_cuisinee", "derniere_cuisson"}]. Si erreur: [].`
-    );
-    const parsed = parseJSON(extractText(data));
-    if (Array.isArray(parsed)) setRecettes(parsed);
+    try {
+      const data = await notionQuery(DB_RECETTES);
+      const parsed = (data.results || []).map(parseRecette);
+      setRecettes(parsed);
+      setCache("recettes", parsed);
+    } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
 
@@ -503,36 +461,16 @@ function RecettesTab({ toast }) {
     setVoting(r.id + type);
     const field = type === "up" ? "Likes" : "Dislikes";
     const current = type === "up" ? (r.likes || 0) : (r.dislikes || 0);
-    await callClaude("Met à jour Notion. Réponds OK.",
-      `Met à jour la page Notion "${r.id}". Change "${field}" à ${current + 1}.`
-    );
-    setRecettes(prev => prev.map(x => x.id === r.id ? { ...x, [type === "up" ? "likes" : "dislikes"]: current + 1 } : x));
-    setVoting(null);
+    const updated = recettes.map(x => x.id === r.id ? { ...x, [type === "up" ? "likes" : "dislikes"]: current + 1 } : x);
+    setRecettes(updated);
+    setCache("recettes", updated);
     if (selected?.id === r.id) setSelected(prev => ({ ...prev, [type === "up" ? "likes" : "dislikes"]: current + 1 }));
-  };
-
-  const normalizeAll = async () => {
-    setNormalizing(true);
-    toast("Normalisation en cours... (peut prendre quelques minutes)");
-    for (const r of recettes) {
-      if (!r.nom) continue;
-      const result = await claudeJSON(
-        "Tu es un chef cuisinier français expert. Retourne UNIQUEMENT un JSON valide, sans backticks.",
-        `${NORMALIZE_PROMPT}\n\nRecette à normaliser:\nNom: ${r.nom}\nIngrédients: ${r.ingredients}\nInstructions: ${r.instructions}`
-      );
-      if (result) {
-        await callClaude("Met à jour Notion. Réponds OK.",
-          `Met à jour la page Notion "${r.id}": Nom: "${result.nom || r.nom}", Ingrédients: "${result.ingredients || r.ingredients}", Instructions: "${result.instructions || r.instructions}", Catégorie: "${result.categorie || r.categorie}", "Temps de préparation": ${result.temps || r.temps || 0}, Portions: ${result.portions || r.portions || 0}.`
-        );
-      }
-    }
-    toast("Normalisation terminée ✓");
-    setNormalizing(false);
-    load();
+    notionUpdate(r.id, { [field]: notionNumber(current + 1) }); // fire and forget
+    setVoting(null);
   };
 
   const score = r => (r.likes || 0) - (r.dislikes || 0);
-
+  const cats = ["Toutes", "Petit-déjeuner", "Déjeuner", "Dîner", "Snack", "Dessert"];
   const sorted = [...recettes]
     .filter(r => filter === "Toutes" || r.categorie === filter)
     .sort((a, b) => {
@@ -546,11 +484,8 @@ function RecettesTab({ toast }) {
       return 0;
     });
 
-  const cats = ["Toutes", "Petit-déjeuner", "Déjeuner", "Dîner", "Snack", "Dessert"];
-
   return (
     <div>
-      {/* Controls */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {cats.map(c => (
@@ -559,15 +494,11 @@ function RecettesTab({ toast }) {
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ ...inputStyle, width: "auto", fontSize: 12, padding: "6px 10px" }}>
-            <option value="score">Tri : Score</option>
-            <option value="cuisinee">Tri : Plus cuisinée</option>
-            <option value="recent">Tri : À refaire</option>
+            <option value="score">Score</option>
+            <option value="cuisinee">Plus cuisinée</option>
+            <option value="recent">À refaire</option>
           </select>
-          <button onClick={normalizeAll} disabled={normalizing} title="Traduire et normaliser toutes les recettes"
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, color: normalizing ? "#475569" : "#94A3B8", fontSize: 12, cursor: normalizing ? "default" : "pointer" }}>
-            {normalizing ? <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}><Icon name="loader" size={13} /></span> : <Icon name="normalize" size={13} />}
-            {normalizing ? "..." : "Normaliser"}
-          </button>
+          <button onClick={() => load(true)} title="Rafraîchir" style={{ padding: "8px 10px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, color: "#64748B", cursor: "pointer" }}><Icon name="refresh" size={14} /></button>
           <button onClick={() => setShowAdd(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "#6366F1", border: "none", borderRadius: 8, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
             <Icon name="plus" size={16} /> Nouvelle
           </button>
@@ -577,51 +508,47 @@ function RecettesTab({ toast }) {
       {loading ? <Spinner label="Chargement des recettes..." /> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
           {sorted.length === 0 && <div style={{ gridColumn: "1/-1", textAlign: "center", padding: 48, color: "#475569" }}><div style={{ fontSize: 40, marginBottom: 12 }}>📖</div><div style={{ fontSize: 14 }}>Aucune recette.</div></div>}
-          {sorted.map((r, i) => {
-            const s = score(r);
-            return (
-              <div key={i} style={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: 12, padding: 16, cursor: "pointer", transition: "border-color 0.15s, transform 0.15s" }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "#6366F1"; e.currentTarget.style.transform = "translateY(-2px)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "#1E293B"; e.currentTarget.style.transform = "translateY(0)"; }}>
-                <div onClick={() => setSelected(r)} style={{ marginBottom: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-                    <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#F8FAFC", fontFamily: "'Playfair Display', serif", lineHeight: 1.3, flex: 1, marginRight: 8 }}>{r.nom || "Sans titre"}</h4>
-                    <ScoreBadge score={s} />
-                  </div>
-                  {r.categorie && <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4, background: "#1E293B", color: "#94A3B8" }}>{r.categorie}</span>}
-                  <div style={{ marginTop: 8, display: "flex", gap: 10, fontSize: 11, color: "#64748B", flexWrap: "wrap" }}>
-                    {r.temps && <span>⏱ {r.temps} min</span>}
-                    {r.fois_cuisinee > 0 && <span>🍳 {r.fois_cuisinee}x</span>}
-                    <DaysSince date={r.derniere_cuisson} />
-                  </div>
+          {sorted.map((r, i) => (
+            <div key={i} style={{ background: "#0F172A", border: "1px solid #1E293B", borderRadius: 12, padding: 16, cursor: "pointer", transition: "border-color 0.15s, transform 0.15s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = "#6366F1"; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#1E293B"; e.currentTarget.style.transform = "translateY(0)"; }}>
+              <div onClick={() => setSelected(r)} style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#F8FAFC", fontFamily: "'Playfair Display', serif", lineHeight: 1.3, flex: 1, marginRight: 8 }}>{r.nom || "Sans titre"}</h4>
+                  <ScoreBadge score={score(r)} />
                 </div>
-                {/* Vote buttons */}
-                <div style={{ display: "flex", gap: 8, borderTop: "1px solid #1E293B", paddingTop: 10 }} onClick={e => e.stopPropagation()}>
-                  <button onClick={() => vote(r, "up")} disabled={voting === r.id + "up"}
-                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "6px", background: "#0A2010", border: "1px solid #166534", borderRadius: 6, color: "#4ADE80", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                    <Icon name="thumb_up" size={13} /> {r.likes || 0}
-                  </button>
-                  <button onClick={() => vote(r, "down")} disabled={voting === r.id + "down"}
-                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "6px", background: "#1C0A0A", border: "1px solid #991B1B", borderRadius: 6, color: "#F87171", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                    <Icon name="thumb_down" size={13} /> {r.dislikes || 0}
-                  </button>
+                {r.categorie && <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4, background: "#1E293B", color: "#94A3B8" }}>{r.categorie}</span>}
+                <div style={{ marginTop: 8, display: "flex", gap: 10, fontSize: 11, color: "#64748B", flexWrap: "wrap" }}>
+                  {r.temps > 0 && <span>⏱ {r.temps} min</span>}
+                  {r.fois_cuisinee > 0 && <span>🍳 {r.fois_cuisinee}x</span>}
+                  <DaysSince date={r.derniere_cuisson} />
                 </div>
               </div>
-            );
-          })}
+              <div style={{ display: "flex", gap: 8, borderTop: "1px solid #1E293B", paddingTop: 10 }} onClick={e => e.stopPropagation()}>
+                <button onClick={() => vote(r, "up")} disabled={voting === r.id + "up"}
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "6px", background: "#0A2010", border: "1px solid #166534", borderRadius: 6, color: "#4ADE80", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                  <Icon name="thumb_up" size={13} /> {r.likes || 0}
+                </button>
+                <button onClick={() => vote(r, "down")} disabled={voting === r.id + "down"}
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "6px", background: "#1C0A0A", border: "1px solid #991B1B", borderRadius: 6, color: "#F87171", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                  <Icon name="thumb_down" size={13} /> {r.dislikes || 0}
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
-      {showAdd && <AddRecipeModal onClose={() => setShowAdd(false)} onSaved={(msg) => { toast(msg); load(); }} />}
+      {showAdd && <AddRecipeModal onClose={() => setShowAdd(false)} onSaved={(msg) => { toast(msg); load(true); }} />}
 
       {selected && (
         <Modal title={selected.nom} onClose={() => setSelected(null)} wide>
           <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
             {selected.categorie && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#1E293B", color: "#94A3B8" }}>{selected.categorie}</span>}
-            {selected.temps && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#1E293B", color: "#94A3B8" }}>⏱ {selected.temps} min</span>}
-            {selected.portions && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#1E293B", color: "#94A3B8" }}>🍽 {selected.portions} p.</span>}
+            {selected.temps > 0 && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#1E293B", color: "#94A3B8" }}>⏱ {selected.temps} min</span>}
+            {selected.portions > 0 && <span style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#1E293B", color: "#94A3B8" }}>🍽 {selected.portions} p.</span>}
             <ScoreBadge score={score(selected)} />
-            {selected.fois_cuisinee > 0 && <span style={{ fontSize: 12, color: "#64748B" }}>🍳 cuisinée {selected.fois_cuisinee}x</span>}
+            {selected.fois_cuisinee > 0 && <span style={{ fontSize: 12, color: "#64748B" }}>🍳 {selected.fois_cuisinee}x</span>}
             <DaysSince date={selected.derniere_cuisson} />
           </div>
           {selected.ingredients && <>
@@ -633,12 +560,10 @@ function RecettesTab({ toast }) {
             <p style={{ color: "#CBD5E1", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{selected.instructions}</p>
           </>}
           <div style={{ display: "flex", gap: 8, marginTop: 20, borderTop: "1px solid #1E293B", paddingTop: 16 }}>
-            <button onClick={() => { vote(selected, "up"); }}
-              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", background: "#0A2010", border: "1px solid #166534", borderRadius: 8, color: "#4ADE80", cursor: "pointer", fontWeight: 600 }}>
+            <button onClick={() => vote(selected, "up")} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", background: "#0A2010", border: "1px solid #166534", borderRadius: 8, color: "#4ADE80", cursor: "pointer", fontWeight: 600 }}>
               <Icon name="thumb_up" size={16} /> J'aime ({selected.likes || 0})
             </button>
-            <button onClick={() => { vote(selected, "down"); }}
-              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", background: "#1C0A0A", border: "1px solid #991B1B", borderRadius: 8, color: "#F87171", cursor: "pointer", fontWeight: 600 }}>
+            <button onClick={() => vote(selected, "down")} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "10px", background: "#1C0A0A", border: "1px solid #991B1B", borderRadius: 8, color: "#F87171", cursor: "pointer", fontWeight: 600 }}>
               <Icon name="thumb_down" size={16} /> Pas fan ({selected.dislikes || 0})
             </button>
           </div>
@@ -653,7 +578,7 @@ function PlanningTab({ toast }) {
   const [planning, setPlanning] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], moment: "Dîner", recette: "", recetteId: "", portions: 2, notes: "" });
+  const [form, setForm] = useState({ date: new Date().toISOString().split("T")[0], moment: "Dîner", recette: "", portions: 2, notes: "" });
   const [saving, setSaving] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [confirming, setConfirming] = useState(null);
@@ -666,12 +591,16 @@ function PlanningTab({ toast }) {
   };
   const weekDates = getWeekDates(weekOffset);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const cached = getCached("planning");
+    if (cached && !force) { setPlanning(cached); setLoading(false); return; }
     setLoading(true);
-    const data = await callClaude("Tu interroges Notion. Réponds UNIQUEMENT en JSON valide.",
-      `Lis "${DB_PLANNING}". Retourne [{id, repas, date (YYYY-MM-DD), moment, recette, recette_id, portions, notes, fait (boolean)}]. Si erreur: [].`);
-    const parsed = parseJSON(extractText(data));
-    if (Array.isArray(parsed)) setPlanning(parsed);
+    try {
+      const data = await notionQuery(DB_PLANNING);
+      const parsed = (data.results || []).map(parsePlanning);
+      setPlanning(parsed);
+      setCache("planning", parsed);
+    } catch (e) { console.error(e); }
     setLoading(false);
   }, [weekOffset]);
 
@@ -679,40 +608,36 @@ function PlanningTab({ toast }) {
 
   const save = async () => {
     setSaving(true);
-    await callClaude("Tu crées des pages Notion. Confirme avec OK.",
-      `Crée dans "${DB_PLANNING}": Repas: "${form.recette}", Date: "${form.date}", Moment: "${form.moment}", Recette: "${form.recette}", Portions: ${form.portions}, Notes: "${form.notes}"`);
+    await notionCreate(DB_PLANNING, {
+      "Repas": notionTitle(form.recette),
+      "Date": notionDate(form.date),
+      "Moment": notionSelect(form.moment),
+      "Recette": notionText(form.recette),
+      "Portions": notionNumber(form.portions),
+      "Notes": notionText(form.notes),
+    });
     toast("Repas ajouté ✓");
-    setSaving(false); setShowForm(false); await load();
+    setSaving(false);
+    setShowForm(false);
+    setCache("planning", null);
+    load(true);
   };
 
   const confirmCuisine = async (meal) => {
     setConfirming(meal.id);
     const today = new Date().toISOString().split("T")[0];
-
-    // Marquer le repas comme fait dans le planning
-    await callClaude("Met à jour Notion. Réponds OK.",
-      `Met à jour la page planning "${meal.id}". Change "Acheté" (checkbox) à __YES__.`);
-
-    // Si on a un ID de recette, mettre à jour les stats
-    if (meal.recette_id) {
-      // D'abord lire les stats actuelles
-      const data = await callClaude("Tu interroges Notion. Réponds UNIQUEMENT en JSON valide.",
-        `Lis la page Notion "${meal.recette_id}". Retourne {"fois_cuisinee": number}.`);
-      const current = parseJSON(extractText(data));
-      const count = (current?.fois_cuisinee || 0) + 1;
-      await callClaude("Met à jour Notion. Réponds OK.",
-        `Met à jour la page recette "${meal.recette_id}": "Fois cuisinée": ${count}, "date:Dernière cuisson:start": "${today}", "date:Dernière cuisson:is_datetime": 0.`);
-    }
-
+    const updated = planning.map(p => p.id === meal.id ? { ...p, fait: true } : p);
+    setPlanning(updated);
+    setCache("planning", updated);
+    notionUpdate(meal.id, { "Acheté": notionCheckbox(true) });
     toast(`"${meal.recette}" marqué comme cuisiné ✓`);
     setConfirming(null);
-    await load();
   };
 
   const isToday = d => d.toDateString() === new Date().toDateString();
+  const isPast = d => d < new Date() && !isToday(d);
   const getMeals = date => planning.filter(p => p.date === date.toISOString().split("T")[0]);
   const weekLabel = () => ({ 0: "Cette semaine", 1: "Semaine prochaine", "-1": "Semaine dernière" }[weekOffset] || `Sem. ${weekOffset > 0 ? "+" : ""}${weekOffset}`);
-  const isPast = d => d < new Date() && !isToday(d);
 
   return (
     <div>
@@ -722,17 +647,18 @@ function PlanningTab({ toast }) {
           <span style={{ fontSize: 14, fontWeight: 700, color: "#F8FAFC" }}>{weekLabel()}</span>
           <button onClick={() => setWeekOffset(w => w + 1)} style={{ background: "#1E293B", border: "none", borderRadius: 6, color: "#94A3B8", cursor: "pointer", padding: "6px 10px" }}><Icon name="arrow" size={16} /></button>
         </div>
-        <button onClick={() => setShowForm(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "#6366F1", border: "none", borderRadius: 8, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
-          <Icon name="plus" size={16} /> Ajouter
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => load(true)} style={{ padding: "8px 10px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, color: "#64748B", cursor: "pointer" }}><Icon name="refresh" size={14} /></button>
+          <button onClick={() => setShowForm(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "#6366F1", border: "none", borderRadius: 8, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+            <Icon name="plus" size={16} /> Ajouter
+          </button>
+        </div>
       </div>
 
       {loading ? <Spinner label="Chargement du planning..." /> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 8 }}>
           {weekDates.map((date, i) => {
-            const meals = getMeals(date);
-            const today = isToday(date);
-            const past = isPast(date);
+            const meals = getMeals(date); const today = isToday(date); const past = isPast(date);
             return (
               <div key={i} style={{ background: today ? "#1E1B4B" : "#0F172A", border: `1px solid ${today ? "#6366F1" : "#1E293B"}`, borderRadius: 10, padding: 10, minHeight: 130, opacity: past ? 0.7 : 1 }}>
                 <div style={{ marginBottom: 8 }}>
@@ -747,12 +673,10 @@ function PlanningTab({ toast }) {
                         <div style={{ fontSize: 9, opacity: 0.8, marginBottom: 1 }}>{m.moment}</div>
                         {m.recette || m.repas}
                       </div>
-                      {/* Bouton confirmer — visible si passé/aujourd'hui et pas encore fait */}
                       {(today || past) && !m.fait && (
                         <button onClick={() => confirmCuisine(m)} disabled={confirming === m.id}
                           style={{ width: "100%", padding: "3px", background: "#064E3B", border: "none", color: "#34D399", fontSize: 10, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
-                          {confirming === m.id ? <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}><Icon name="loader" size={9} /></span> : <Icon name="chef" size={9} />}
-                          {confirming === m.id ? "..." : "Cuisiné !"}
+                          <Icon name="chef" size={9} /> Cuisiné !
                         </button>
                       )}
                       {m.fait && <div style={{ padding: "2px 7px", background: "#064E3B", fontSize: 9, color: "#34D399", fontWeight: 700 }}>✓ fait</div>}
@@ -790,16 +714,19 @@ function CoursesTab({ toast }) {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [form, setForm] = useState({ article: "", categorie: "Épicerie", quantite: "", semaine: "" });
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const cached = getCached("courses");
+    if (cached && !force) { setCourses(cached); setLoading(false); return; }
     setLoading(true);
-    const data = await callClaude("Tu interroges Notion. Réponds UNIQUEMENT en JSON valide.",
-      `Lis "${DB_COURSES}". Retourne [{id, article, categorie, quantite, achete (boolean), semaine}]. Si erreur: [].`);
-    const parsed = parseJSON(extractText(data));
-    if (Array.isArray(parsed)) setCourses(parsed);
+    try {
+      const data = await notionQuery(DB_COURSES);
+      const parsed = (data.results || []).map(parseCourse);
+      setCourses(parsed);
+      setCache("courses", parsed);
+    } catch (e) { console.error(e); }
     setLoading(false);
   }, []);
 
@@ -807,33 +734,27 @@ function CoursesTab({ toast }) {
 
   const toggleAchete = async (item) => {
     const newVal = !item.achete;
-    setCourses(prev => prev.map(c => c.id === item.id ? { ...c, achete: newVal } : c));
-    await callClaude("Mets à jour Notion. Réponds OK.",
-      `Met à jour la page "${item.id}". Change "Acheté" à ${newVal ? "__YES__" : "__NO__"}.`);
+    const updated = courses.map(c => c.id === item.id ? { ...c, achete: newVal } : c);
+    setCourses(updated);
+    setCache("courses", updated);
+    notionUpdate(item.id, { "Acheté": notionCheckbox(newVal) }); // fire and forget
   };
 
   const addItem = async () => {
     setSaving(true);
-    await callClaude("Crée une page Notion. Réponds OK.",
-      `Crée dans "${DB_COURSES}": Article: "${form.article}", Catégorie: "${form.categorie}", Quantité: "${form.quantite}", Acheté: "__NO__", Semaine: "${form.semaine}".`);
+    await notionCreate(DB_COURSES, {
+      "Article": notionTitle(form.article),
+      "Catégorie": notionSelect(form.categorie),
+      "Quantité": notionText(form.quantite),
+      "Acheté": notionCheckbox(false),
+      "Semaine": notionText(form.semaine),
+    });
     toast("Article ajouté ✓");
-    setSaving(false); setShowForm(false); setForm({ article: "", categorie: "Épicerie", quantite: "", semaine: "" }); await load();
-  };
-
-  const generateFromPlanning = async () => {
-    setGenerating(true);
-    const data = await callClaude("Tu es un assistant culinaire. Réponds UNIQUEMENT en JSON valide.",
-      `Lis le planning "${DB_PLANNING}". Pour chaque repas, déduis les ingrédients normalisés en français. Retourne {"items":[{"article":"...","categorie":"Fruits & Légumes|Viandes & Poissons|Produits laitiers|Épicerie|Surgelés|Boissons|Autre","quantite":"..."}]}`);
-    const parsed = parseJSON(extractText(data));
-    if (parsed?.items) {
-      const semaine = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
-      for (const item of parsed.items.slice(0, 20)) {
-        await callClaude("Crée Notion. OK.",
-          `Crée dans "${DB_COURSES}": Article: "${item.article}", Catégorie: "${item.categorie}", Quantité: "${item.quantite}", Acheté: "__NO__", Semaine: "Sem. du ${semaine}".`);
-      }
-      toast(`${parsed.items.length} articles générés ✓`); await load();
-    }
-    setGenerating(false);
+    setSaving(false);
+    setShowForm(false);
+    setForm({ article: "", categorie: "Épicerie", quantite: "", semaine: "" });
+    setCache("courses", null);
+    load(true);
   };
 
   const grouped = courses.reduce((acc, c) => { const cat = c.categorie || "Autre"; if (!acc[cat]) acc[cat] = []; acc[cat].push(c); return acc; }, {});
@@ -851,12 +772,8 @@ function CoursesTab({ toast }) {
           </>}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={generateFromPlanning} disabled={generating}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, color: "#94A3B8", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
-            <Icon name="sparkle" size={14} /> {generating ? "Génération..." : "Depuis le planning"}
-          </button>
-          <button onClick={() => setShowForm(true)}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "#6366F1", border: "none", borderRadius: 8, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+          <button onClick={() => load(true)} style={{ padding: "8px 10px", background: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, color: "#64748B", cursor: "pointer" }}><Icon name="refresh" size={14} /></button>
+          <button onClick={() => setShowForm(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "#6366F1", border: "none", borderRadius: 8, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
             <Icon name="plus" size={16} /> Ajouter
           </button>
         </div>
