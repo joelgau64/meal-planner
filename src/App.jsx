@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-const DB_RECETTES = "9b50c853-33c1-44f8-ac7c-69a575f3f143";
-const DB_PLANNING = "93ddc644-acf0-4c22-9131-1a35c0cbbcf4";
-const DB_COURSES = "2cc46964-341a-449f-ae67-520a85d9a65f";
+const DB_RECETTES = "39c7b0f8-bf02-4893-bc05-6d82b8c38617";
+const DB_PLANNING = "dc70bd98-0691-41b9-abfc-5bde68630995";
+const DB_COURSES = "35f5b3b5-095f-4998-a014-9a112807e711";
 
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 const MOMENTS = ["Petit-déjeuner", "Déjeuner", "Dîner", "Snack"];
