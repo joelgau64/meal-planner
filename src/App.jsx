@@ -23,7 +23,7 @@ const API_URL = "/api/claude";
 async function callClaude(systemPrompt, userPrompt) {
   const res = await fetch(API_URL, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], mcp_servers: [{ type: "url", url: NOTION_MCP, name: "notion" }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1500, system: systemPrompt, messages: [{ role: "user", content: userPrompt }], mcp_servers: [{ type: "url", url: NOTION_MCP, name: "notion" }] }),
   });
   return res.json();
 }
@@ -31,7 +31,7 @@ async function callClaude(systemPrompt, userPrompt) {
 async function claudeJSON(system, user) {
   const res = await fetch(API_URL, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system, messages: [{ role: "user", content: user }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1500, system, messages: [{ role: "user", content: user }] }),
   });
   const data = await res.json();
   return parseJSON((data.content || []).filter(b => b.type === "text").map(b => b.text).join(""));
@@ -40,7 +40,7 @@ async function claudeJSON(system, user) {
 async function claudeVision(prompt, base64, mediaType) {
   const res = await fetch(API_URL, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, system: "Tu es un chef cuisinier expert. Retourne UNIQUEMENT un JSON valide, sans backticks.", messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mediaType, data: base64 } }, { type: "text", text: prompt }] }] }),
+    body: JSON.stringify({ model: "claude-sonnet-4-5", max_tokens: 1500, system: "Tu es un chef cuisinier expert. Retourne UNIQUEMENT un JSON valide, sans backticks.", messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mediaType, data: base64 } }, { type: "text", text: prompt }] }] }),
   });
   const data = await res.json();
   return parseJSON((data.content || []).filter(b => b.type === "text").map(b => b.text).join(""));
