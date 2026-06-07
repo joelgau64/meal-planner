@@ -694,6 +694,7 @@ function PlanningTab({toast}){
   const [dragItem,setDragItem]=useState(null);
   const [dragOver,setDragOver]=useState(null);
   const [toggling,setToggling]=useState(null);
+  const [cookingTarget,setCookingTarget]=useState(null);
   const [form,setForm]=useState({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
   const [suggestions,setSuggestions]=useState([]);
   const [saving,setSaving]=useState(false);
@@ -777,13 +778,32 @@ function PlanningTab({toast}){
   const queueItems=planning.filter(p=>p.queue);
   const weekLabel=()=>({0:"Cette semaine",1:"Semaine prochaine","-1":"Semaine dernière"}[weekOffset]||`Sem. ${weekOffset>0?"+":""}${weekOffset}`);
 
+  const handleCookDone=async(meal,recette)=>{
+    const today=new Date().toISOString().split("T")[0];
+    if(recette){
+      const newCount=(recette.fois_cuisinee||0)+1;
+      const updatedR=recettes.map(x=>x.id===recette.id?{...x,fois_cuisinee:newCount,derniere_cuisson:today}:x);
+      setRecettes(updatedR);setCache("recettes",updatedR);
+      await notionUpdate(recette.id,{"Fois cuisinée":nNum(newCount),"Dernière cuisson":nDate(today)});
+    }
+    const updatedP=planning.map(p=>p.id===meal.id?{...p,fait:true}:p);
+    setPlanning(updatedP);setCache("planning",updatedP);
+    notionUpdate(meal.id,{"Acheté":nCheck(true)});
+    setCookingTarget(null);
+    toast(`"${meal.recette}" cuisiné ! 🎉`);
+  };
+
   const MealChip=({meal})=>{
     const mColor=MOMENT_COLORS[meal.moment]||T.textMuted;
+    const recette=recettes.find(r=>r.id===meal.recette_id||r.nom===meal.recette);
     return(
       <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
         style={{borderRadius:6,overflow:"hidden",marginBottom:4,opacity:dragItem?.id===meal.id?0.4:1,cursor:"grab",border:`1px solid ${mColor}33`,background:`${mColor}0D`}}>
-        <div style={{padding:"5px 8px",fontSize:11,fontWeight:600,color:mColor,lineHeight:1.3,textDecoration:meal.fait?"line-through":"none",opacity:meal.fait?0.6:1,display:"flex",alignItems:"center",gap:4}}>
-          <Icon name="drag" size={8}/><span style={{flex:1}}>{meal.recette||meal.repas}</span>
+        <div
+          onClick={()=>{if(recette)setCookingTarget({meal,recette,portions:meal.portions||DEFAULT_PORTIONS});}}
+          title={recette?"Lancer le mode cuisine":""}
+          style={{padding:"5px 8px",fontSize:11,fontWeight:600,color:mColor,lineHeight:1.3,textDecoration:meal.fait?"line-through":"none",opacity:meal.fait?0.6:1,display:"flex",alignItems:"center",gap:4,cursor:recette?"pointer":"default"}}>
+          <Icon name="drag" size={8}/><span style={{flex:1}}>{meal.recette||meal.repas}</span>{recette&&<Icon name="play" size={8}/>}
         </div>
         <button
           onClick={()=>toggleFait(meal)}
@@ -861,6 +881,15 @@ function PlanningTab({toast}){
             </div>
           </div>
         </div>
+      )}
+
+      {cookingTarget&&(
+        <CookingMode
+          recette={cookingTarget.recette}
+          portions={cookingTarget.portions}
+          onClose={()=>setCookingTarget(null)}
+          onDone={()=>handleCookDone(cookingTarget.meal,cookingTarget.recette)}
+        />
       )}
 
       {showForm&&(
