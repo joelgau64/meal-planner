@@ -893,13 +893,24 @@ function DiscoveryTab({toast}){
   async function search(){
     if(!prompt.trim())return;
     setLoading(true);setCards([]);setCurrent(0);setLiked([]);setDone(false);
-    const result=await claudeJSON(
-      "Tu es un chef cuisinier expert. Retourne UNIQUEMENT un tableau JSON valide, sans backticks ni texte autour.",
-      `L'utilisateur veut: "${prompt}". Trouve 7 recettes adaptées sur internet. Pour chacune retourne: {"titre":"...","description":"courte description appétissante 1-2 phrases","categorie":"Déjeuner|Dîner|Dessert|Petit-déjeuner|Snack","temps":30,"difficulte":"Facile|Moyen|Difficile","url":"URL source réelle de la recette","emoji":"emoji représentatif du plat"}. Retourne un tableau JSON de 7 objets.`,
-      true
-    );
-    const arr=Array.isArray(result)?result:(result?.recettes||[]);
-    setCards(arr);setLoading(false);
+    try{
+      const query=`recette ${prompt} site:marmiton.org OR site:cuisineaz.com OR site:750g.com OR site:chef-simon.com`;
+      const res=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query})});
+      const data=await res.json();
+      const EMOJIS=["🍽️","🥗","🍲","🥘","🍜","🥩","🐟","🥦","🍋","🫐"];
+      const arr=(data.results||[]).slice(0,7).map((r,i)=>({
+        titre:r.titre.replace(/- Marmiton|- CuisineAZ|- 750g|- Chef Simon/gi,"").trim(),
+        description:r.description,
+        url:r.url,
+        source:r.source,
+        categorie:"Dîner",
+        temps:null,
+        difficulte:null,
+        emoji:EMOJIS[i%EMOJIS.length],
+      }));
+      setCards(arr);
+    }catch(e){console.error(e);}
+    setLoading(false);
   }
 
   function swipe(dir){
