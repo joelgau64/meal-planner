@@ -1,0 +1,98 @@
+[
+  {
+    "nom": "Bowl avocat saumon",
+    "categorie": "Déjeuner",
+    "temps": 15,
+    "portions": 4,
+    "ingredients": "4 pavés de saumon fumé\n2 avocats mûrs\n300g riz japonais\n4 càs vinaigre de riz\n1 concombre\n1 citron vert\n4 càs sauce soja\n2 càs huile de sésame\nGraines de sésame\nCiboulette",
+    "instructions": "1. Cuire le riz, assaisonner avec vinaigre de riz, sucre et sel.\n2. Couper l'avocat en tranches et arroser de citron vert.\n3. Trancher le saumon fumé et le concombre en rondelles.\n4. Disposer riz, avocat, saumon et concombre dans des bols.\n5. Arroser de sauce soja et huile de sésame, parsemer de sésame et ciboulette."
+  },
+  {
+    "nom": "Salade caprese",
+    "categorie": "Déjeuner",
+    "temps": 10,
+    "portions": 4,
+    "ingredients": "4 grosses tomates bien mûres\n2 boules de mozzarella di bufala\n1 bouquet de basilic frais\n6 càs huile d'olive extra vierge\nFleur de sel\nPoivre noir\nVinaigre balsamique (optionnel)",
+    "instructions": "1. Couper les tomates et la mozzarella en tranches épaisses.\n2. Alterner les tranches de tomates et mozzarella dans un plat.\n3. Glisser les feuilles de basilic entre les tranches.\n4. Arroser généreusement d'huile d'olive.\n5. Assaisonner de fleur de sel et poivre. Servir immédiatement."
+  },
+  {
+    "nom": "Assiette falafels houmous",
+    "categorie": "Déjeuner",
+    "temps": 30,
+    "portions": 4,
+    "ingredients": "400g pois chiches cuits\n1 oignon\n3 gousses d'ail\n1 bouquet de persil\n1 bouquet de coriandre\n1 càs cumin\n1 càs coriandre en poudre\nHuile de friture\nPour le houmous: 400g pois chiches, 3 càs tahini, 1 citron, 2 gousses ail, 4 càs huile olive\nTomates cerises, concombre, radis, pain pita",
+    "instructions": "1. Mixer pois chiches, oignon, ail, herbes et épices pour les falafels.\n2. Former des boulettes et réfrigérer 30 min.\n3. Mixer tous les ingrédients houmous jusqu'à consistance lisse.\n4. Faire frire les falafels 3-4 min jusqu'à dorés.\n5. Dresser houmous, falafels, légumes croquants et pain pita."
+  },
+  {
+    "nom": "Poke bowl teriyaki",
+    "categorie": "Déjeuner",
+    "temps": 20,
+    "portions": 4,
+    "ingredients": "400g thon sashimi grade\n300g riz japonais\n1 mangue\n200g edamame\n1 avocat\n1 concombre\n4 oignons verts\nPour la sauce teriyaki: 80ml sauce soja, 60ml mirin, 2 càs sucre, 1 càs miel\nGraines de sésame\nNori en lamelles",
+    "instructions": "1. Cuire le riz et assaisonner légèrement.\n2. Préparer la sauce teriyaki: mélanger soja, mirin, sucre, miel et réduire 5 min.\n3. Couper thon en cubes, mangue et avocat en dés, concombre en lamelles.\n4. Assembler les bols: riz, thon, mangue, edamame, avocat, concombre.\n5. Napper de sauce teriyaki, parsemer sésame, nori et oignons verts."
+  },
+  {
+    "nom": "Salade quinoa légumes grillés",
+    "categorie": "Déjeuner",
+    "temps": 30,
+    "portions": 4,
+    "ingredients": "300g quinoa\n2 courgettes\n2 poivrons (rouge et jaune)\n1 aubergine\n4 càs pesto\n100g roquette\n50g parmesan\n4 càs huile d'olive\nSel, poivre\nPignons de pin grillés",
+    "instructions": "1. Cuire le quinoa selon les instructions, laisser refroidir.\n2. Couper les légumes et les faire griller à la plancha ou au four 200°C, 20 min.\n3. Mélanger quinoa, légumes grillés et roquette.\n4. Assaisonner avec pesto, huile d'olive, sel et poivre.\n5. Parsemer de parmesan râpé et pignons grillés."
+  },
+  {
+    "nom": "Salade de lentilles estivale",
+    "categorie": "Déjeuner",
+    "temps": 25,
+    "portions": 4,
+    "ingredients": "300g lentilles vertes du Puy\n150g feta\n100g tomates séchées\n1 concombre\n1 oignon rouge\n1 bouquet de persil\n4 càs huile d'olive\n2 càs vinaigre de vin rouge\n1 càc cumin\nSel, poivre",
+    "instructions": "1. Cuire les lentilles 20 min dans l'eau salée, égoutter et laisser refroidir.\n2. Couper concombre en dés, oignon rouge en fines rondelles.\n3. Émietter la feta, ciseler le persil.\n4. Mélanger lentilles, feta, tomates séchées, concombre et oignon.\n5. Assaisonner huile d'olive, vinaigre, cumin, sel et poivre."
+  },
+  {
+    "nom": "Brochettes poulet marinade grecque",
+    "categorie": "Dîner",
+    "temps": 30,
+    "portions": 4,
+    "ingredients": "800g filets de poulet\n200g yaourt grec\n2 citrons (jus et zeste)\n4 gousses d'ail\n2 càs origan séché\n1 càs thym\n4 càs huile d'olive\nSel, poivre\nTzatziki pour servir\nPain pita",
+    "instructions": "1. Mélanger yaourt, jus de citron, zeste, ail écrasé, origan, thym et huile.\n2. Couper le poulet en cubes, mariner au moins 2h au réfrigérateur.\n3. Monter les brochettes et assaisonner.\n4. Griller 10-12 min en retournant à mi-cuisson.\n5. Servir avec tzatziki, pain pita et salade de tomates."
+  },
+  {
+    "nom": "Soupe froide betterave",
+    "categorie": "Déjeuner",
+    "temps": 15,
+    "portions": 4,
+    "ingredients": "500g betteraves cuites\n200g yaourt grec\n1 citron (jus)\n1 gousse d'ail\n1 càc cumin\nMenthe fraîche\n200ml bouillon de légumes froid\nSel, poivre\nHuile d'olive\nGraines de tournesol",
+    "instructions": "1. Mixer betteraves, yaourt, bouillon froid, ail et jus de citron.\n2. Ajouter le cumin, saler et poivrer.\n3. Ajuster la consistance avec le bouillon.\n4. Réfrigérer au moins 1h.\n5. Servir bien frais avec menthe fraîche, huile d'olive et graines de tournesol."
+  },
+  {
+    "nom": "Clafoutis cerises léger",
+    "categorie": "Dessert",
+    "temps": 45,
+    "portions": 6,
+    "ingredients": "500g cerises fraîches (non dénoyautées)\n3 oeufs\n80g sucre\n60g farine\n250ml lait demi-écrémé\n100ml crème légère\n1 càc extrait de vanille\n1 càs beurre (pour le moule)\nSucre glace",
+    "instructions": "1. Préchauffer le four à 180°C. Beurrer un plat à gratin.\n2. Disposer les cerises dans le plat.\n3. Fouetter oeufs et sucre jusqu'à blanchiment.\n4. Incorporer farine, puis lait, crème et vanille.\n5. Verser sur les cerises et cuire 35-40 min. Saupoudrer de sucre glace."
+  },
+  {
+    "nom": "Salade pastèque feta menthe",
+    "categorie": "Déjeuner",
+    "temps": 10,
+    "portions": 4,
+    "ingredients": "1 petite pastèque (environ 1,5kg)\n200g feta\n1 bouquet de menthe fraîche\n1 concombre\n1 oignon rouge\n3 càs huile d'olive\n1 citron vert (jus)\nPoivre noir\nFleur de sel",
+    "instructions": "1. Couper la pastèque en cubes, épépiner.\n2. Couper le concombre en demi-rondelles, émincer l'oignon rouge.\n3. Émietter grossièrement la feta.\n4. Mélanger pastèque, concombre, oignon et feta dans un saladier.\n5. Arroser d'huile d'olive et jus de citron vert, parsemer de menthe et assaisonner."
+  },
+  {
+    "nom": "Panna cotta fruits de la passion",
+    "categorie": "Dessert",
+    "temps": 20,
+    "portions": 4,
+    "ingredients": "500ml crème liquide entière\n50g sucre\n3 feuilles de gélatine\n1 gousse de vanille\nPour le coulis: 6 fruits de la passion, 2 càs sucre, 1 càs jus de citron vert",
+    "instructions": "1. Ramollir la gélatine dans l'eau froide 5 min.\n2. Chauffer crème, sucre et vanille sans bouillir.\n3. Incorporer la gélatine essorée, mélanger et filtrer.\n4. Verser dans des ramequins et réfrigérer 4h minimum.\n5. Mixer pulpe des fruits de la passion avec sucre et citron. Napper les panna cotta au moment de servir."
+  },
+  {
+    "nom": "Fattoush libanais",
+    "categorie": "Déjeuner",
+    "temps": 15,
+    "portions": 4,
+    "ingredients": "2 pains pita\n4 tomates\n1 concombre\n1 poivron vert\n4 radis\n1 oignon rouge\n1 bouquet de persil\n1 bouquet de menthe\nPour la vinaigrette: 4 càs huile d'olive, 2 càs jus de citron, 1 càs sumac, 1 gousse ail, sel",
+    "instructions": "1. Couper les pitas en morceaux et faire griller au four 180°C 10 min jusqu'à croustillant.\n2. Couper tous les légumes en petits dés.\n3. Ciseler finement persil et menthe.\n4. Mélanger tous les légumes et herbes dans un saladier.\n5. Préparer la vinaigrette au sumac, assaisonner la salade et ajouter les croûtons pita au dernier moment."
+  }
+]
