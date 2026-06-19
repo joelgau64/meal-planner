@@ -122,6 +122,33 @@ async function fetchOgImage(url) {
   } catch { return null; }
 }
 
+const PEXELS_API_KEY = '4g2jiEPcHQiYGhnNjrviL0NacwVzxAKrQ7qokCncr1lauq2ARQdhTRFp';
+
+const TR = {
+  'poulet':'chicken','boeuf':'beef','porc':'pork','saumon':'salmon',
+  'cabillaud':'cod fish','merlu':'hake','bar':'sea bass','thon':'tuna',
+  'crevettes':'shrimp','pâtes':'pasta','farfalle':'pasta','orecchiette':'pasta',
+  'nouilles':'noodles','riz':'rice','curry':'curry','salade':'salad',
+  'soupe':'soup','tarte':'tart','tomate':'tomato','champignon':'mushroom',
+  'quinoa':'quinoa','citron':'lemon','épinards':'spinach','courgette':'zucchini',
+  'aubergine':'eggplant','artichaut':'artichoke','petits pois':'peas',
+  'jambon':'ham','bacon':'bacon','mozzarella':'mozzarella','pesto':'pesto',
+  'citronnelle':'lemongrass','olives':'olives','cappuccino':'mushroom soup',
+  'tatin':'tart tomato','roulés':'fish rolls','brocoli':'broccoli',
+  'pommes de terre':'potatoes','lait de coco':'coconut curry'
+};
+
+async function findPhotoPexels(nom) {
+  let q = nom.toLowerCase();
+  for (const [fr, en] of Object.entries(TR)) q = q.replace(new RegExp(fr, 'gi'), en);
+  q = q.replace(/\b(au|aux|à|la|le|les|de|du|des|et|en|avec|sur|ma|mon|sa|ses)\b/gi, ' ');
+  q = q.replace(/\s+/g, ' ').trim() + ' food dish';
+  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=5&orientation=landscape`;
+  const res = await fetch(url, { headers: { 'Authorization': PEXELS_API_KEY } });
+  const data = await res.json();
+  return data.photos?.[0]?.src?.large2x || data.photos?.[0]?.src?.large || null;
+}
+
 function normalize(s) {
   return (s || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -166,14 +193,18 @@ export default async function handler(req, res) {
       const name = page.properties?.Nom?.title?.[0]?.plain_text || '';
       const samsungUrl = findMatch(name, SAMSUNG_URLS);
       
-      if (!samsungUrl) { 
-        results.log.push(`No match: ${name}`);
-        results.skipped++;
-        continue;
+      let imageUrl = null;
+
+      if (samsungUrl) {
+        // Essayer Samsung Food d'abord
+        imageUrl = await fetchOgImage(samsungUrl);
       }
 
-      // Fetch og:image
-      const imageUrl = await fetchOgImage(samsungUrl);
+      // Fallback Pexels si pas d'image Samsung Food
+      if (!imageUrl) {
+        imageUrl = await findPhotoPexels(name);
+      }
+
       if (!imageUrl) {
         results.log.push(`No image: ${name}`);
         results.failed++;
