@@ -1095,7 +1095,7 @@ export default function App(){
   const [tab,setTab]=useState("recettes");
   const [toastMsg,setToastMsg]=useState(null);
   const toast=msg=>setToastMsg(msg);
-  const tabs=[{id:"recettes",label:"Recettes",icon:"book"},{id:"planning",label:"Planning",icon:"calendar"},{id:"courses",label:"Courses",icon:"cart"},{id:"discovery",label:"Découverte",icon:"sparkle"}];
+  const tabs=[{id:"recettes",label:"Recettes",icon:"book"},{id:"planning",label:"Planning",icon:"calendar"},{id:"courses",label:"Courses",icon:"cart"},{id:"discovery",label:"✨",icon:"sparkle"}];
 
   return(
     <div style={{minHeight:"100vh",background:"#020617",color:"#F8FAFC",fontFamily:"'DM Sans', system-ui, sans-serif"}}>
@@ -1113,7 +1113,7 @@ export default function App(){
             <span style={{fontSize:17,fontWeight:800,fontFamily:"'Playfair Display', serif",background:"linear-gradient(135deg, #F8FAFC, #94A3B8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Meal Planner</span>
           </div>
           <nav style={{display:"flex",gap:2,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",paddingBottom:2}}>
-            {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 12px",borderRadius:8,whiteSpace:"nowrap",flexShrink:0,background:tab===t.id?"#1E293B":"transparent",border:"none",color:tab===t.id?"#F8FAFC":"#64748B",fontWeight:tab===t.id?700:500,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}><Icon name={t.icon} size={15}/>{t.label}</button>))}
+            {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 10px",borderRadius:8,whiteSpace:"nowrap",flexShrink:0,fontSize:12,background:tab===t.id?"#1E293B":"transparent",border:"none",color:tab===t.id?"#F8FAFC":"#64748B",fontWeight:tab===t.id?700:500,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}><Icon name={t.icon} size={15}/>{t.label}</button>))}
           </nav>
         </div>
       </div>
