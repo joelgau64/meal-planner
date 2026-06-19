@@ -1,0 +1,173 @@
+[
+  {
+    "nom": "Sauce Puttanesca",
+    "categorie": "Sauce & Marinade",
+    "temps": 20,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "400g tomates pelées en boîte\n4 filets d'anchois\n50g olives noires dénoyautées\n2 càs câpres\n3 gousses d'ail\n1 piment rouge séché\n3 càs huile d'olive\nSel, poivre\nPersil frais",
+    "instructions": "1. Faire revenir l'ail et le piment dans l'huile d'olive 2 min.\n2. Ajouter les anchois et écraser à la spatule.\n3. Ajouter les tomates, olives et câpres.\n4. Mijoter 15 min à feu moyen.\n5. Rectifier l'assaisonnement et parsemer de persil."
+  },
+  {
+    "nom": "Sauce Amatriciana",
+    "categorie": "Sauce & Marinade",
+    "temps": 25,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "150g guanciale (ou pancetta)\n400g tomates pelées en boîte\n1 oignon\n1 piment rouge séché\n50g pecorino romano râpé\n3 càs huile d'olive\nSel, poivre",
+    "instructions": "1. Faire revenir le guanciale en dés jusqu'à ce qu'il soit croustillant.\n2. Ajouter l'oignon et le piment, cuire 3 min.\n3. Déglacer avec un peu de vin blanc, ajouter les tomates.\n4. Mijoter 20 min.\n5. Servir avec le pecorino râpé."
+  },
+  {
+    "nom": "Sauce Arrabbiata",
+    "categorie": "Sauce & Marinade",
+    "temps": 20,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "400g tomates pelées en boîte\n4 gousses d'ail\n2 piments rouges séchés\n4 càs huile d'olive\nSel\nPersil frais",
+    "instructions": "1. Faire revenir l'ail et les piments dans l'huile 2 min.\n2. Ajouter les tomates écrasées.\n3. Mijoter 15 min à feu vif pour réduire.\n4. Saler et parsemer de persil."
+  },
+  {
+    "nom": "Sauce Aglio e Olio",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "8 gousses d'ail\n100ml huile d'olive extra vierge\n1 piment rouge séché\nPersil plat frais\nSel",
+    "instructions": "1. Émincer l'ail très finement.\n2. Chauffer l'huile à feu doux, ajouter l'ail et le piment.\n3. Cuire doucement 5 min sans colorer.\n4. Ajouter le persil haché hors du feu.\n5. Mélanger immédiatement aux pâtes avec un peu d'eau de cuisson."
+  },
+  {
+    "nom": "Sauce Genovese",
+    "categorie": "Sauce & Marinade",
+    "temps": 180,
+    "portions": 6,
+    "difficulte": "Moyen",
+    "ingredients": "1kg oignons\n500g jarret de boeuf\n2 carottes\n2 branches de céleri\n1 verre de vin blanc\n4 càs huile d'olive\nSel, poivre\nLaurier, thym",
+    "instructions": "1. Faire revenir la viande dans l'huile, réserver.\n2. Faire fondre les oignons émincés 30 min à feu doux.\n3. Ajouter carottes et céleri en dés, puis la viande.\n4. Déglacer au vin blanc, ajouter les herbes.\n5. Cuire à couvert 2h30 à feu très doux jusqu'à ce que les oignons soient fondus et caramélisés."
+  },
+  {
+    "nom": "Chermoula Marocaine",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "1 bouquet de coriandre fraîche\n1 bouquet de persil plat\n4 gousses d'ail\n1 càs cumin en poudre\n1 càs paprika doux\n1/2 càc piment de Cayenne\n1 citron (jus)\n6 càs huile d'olive\nSel",
+    "instructions": "1. Mixer coriandre, persil et ail.\n2. Ajouter les épices, le jus de citron et l'huile.\n3. Mixer jusqu'à obtenir une pâte lisse.\n4. Rectifier l'assaisonnement.\n5. Utiliser comme marinade (30 min minimum) pour poisson, poulet ou légumes."
+  },
+  {
+    "nom": "Marinade Grecque",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "1 citron (jus et zeste)\n6 càs huile d'olive\n4 gousses d'ail\n2 càs origan séché\n1 càs thym\n1 càc miel\nSel, poivre noir",
+    "instructions": "1. Mélanger tous les ingrédients dans un bol.\n2. Fouetter pour émulsionner.\n3. Mariner viande ou légumes au moins 2h au réfrigérateur.\n4. Idéal pour poulet, agneau, légumes grillés ou halloumi."
+  },
+  {
+    "nom": "Marinade Italienne aux Herbes",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "6 càs huile d'olive\n3 càs vinaigre balsamique\n3 gousses d'ail\n1 càs romarin frais haché\n1 càs thym frais\n1 càs origan\n1 càc moutarde de Dijon\nSel, poivre",
+    "instructions": "1. Mélanger vinaigre balsamique et moutarde.\n2. Incorporer l'huile en filet en fouettant.\n3. Ajouter l'ail écrasé et les herbes.\n4. Saler et poivrer.\n5. Mariner viande rouge ou légumes 2h minimum."
+  },
+  {
+    "nom": "Marinade Turque au Yaourt",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "200g yaourt grec\n3 gousses d'ail\n1 citron (jus)\n1 càs paprika fumé\n1 càs cumin\n1 càc cannelle\n1 càc piment d'Alep\n2 càs huile d'olive\nSel",
+    "instructions": "1. Mélanger le yaourt avec l'ail écrasé.\n2. Ajouter toutes les épices et le jus de citron.\n3. Incorporer l'huile d'olive.\n4. Mélanger et saler.\n5. Idéal pour poulet ou agneau, mariner 4h minimum ou une nuit."
+  },
+  {
+    "nom": "Sauce Yassa Sénégalaise",
+    "categorie": "Sauce & Marinade",
+    "temps": 40,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "4 oignons\n4 citrons (jus)\n4 gousses d'ail\n2 piments verts\n4 càs huile d'arachide\n1 càs moutarde\n1 cube bouillon\nSel, poivre",
+    "instructions": "1. Mariner les oignons émincés avec le jus de citron, l'ail et les piments 1h.\n2. Faire revenir les oignons marinés dans l'huile 20 min jusqu'à caramélisation.\n3. Ajouter la moutarde et le bouillon dilué.\n4. Mijoter 15 min.\n5. Servir sur poulet grillé ou poisson."
+  },
+  {
+    "nom": "Sauce Mafé (Cacahuète)",
+    "categorie": "Sauce & Marinade",
+    "temps": 45,
+    "portions": 4,
+    "difficulte": "Moyen",
+    "ingredients": "200g pâte de cacahuète\n400g tomates pelées\n1 oignon\n3 gousses d'ail\n1 càs concentré de tomate\n1 piment\n500ml bouillon de poulet\n2 càs huile\nSel, poivre",
+    "instructions": "1. Faire revenir l'oignon et l'ail dans l'huile.\n2. Ajouter le concentré de tomate, cuire 2 min.\n3. Incorporer les tomates et le bouillon.\n4. Ajouter la pâte de cacahuète, bien mélanger.\n5. Mijoter 30 min à feu doux en remuant régulièrement."
+  },
+  {
+    "nom": "Marinade Suya Nigériane",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "3 càs poudre d'arachide grillée\n1 càs gingembre en poudre\n1 càs paprika\n1 càc ail en poudre\n1 càc oignon en poudre\n1 càc piment de Cayenne\n1 càc poivre de Selim (kani)\n2 càs huile\nSel",
+    "instructions": "1. Mélanger tous les ingrédients secs.\n2. Incorporer l'huile pour former une pâte.\n3. Enduire généreusement la viande (boeuf, poulet).\n4. Mariner 2h minimum.\n5. Griller à feu vif en badigeonnant en cours de cuisson."
+  },
+  {
+    "nom": "Sauce Moambe Congolaise",
+    "categorie": "Sauce & Marinade",
+    "temps": 60,
+    "portions": 4,
+    "difficulte": "Moyen",
+    "ingredients": "400ml pulpe de noix de palme (ou huile de palme)\n1 oignon\n3 gousses d'ail\n1 piment\n2 tomates\n1 cube bouillon\nSel, poivre\nFeuilles de laurier",
+    "instructions": "1. Faire revenir oignon et ail dans l'huile de palme.\n2. Ajouter les tomates concassées et le piment.\n3. Incorporer la pulpe de palme diluée dans l'eau chaude.\n4. Ajouter le bouillon et le laurier.\n5. Mijoter 45 min. Servir avec poulet ou poisson."
+  },
+  {
+    "nom": "Tare Japonaise (Sauce Ramen)",
+    "categorie": "Sauce & Marinade",
+    "temps": 15,
+    "portions": 6,
+    "difficulte": "Facile",
+    "ingredients": "100ml sauce soja\n50ml mirin\n50ml saké\n1 càs sucre\n3 gousses d'ail\n1 morceau de gingembre (3cm)\n1 càs huile de sésame",
+    "instructions": "1. Mélanger sauce soja, mirin, saké et sucre dans une casserole.\n2. Ajouter l'ail écrasé et le gingembre râpé.\n3. Porter à ébullition, réduire 5 min.\n4. Filtrer et ajouter l'huile de sésame.\n5. Conserver au frigo 2 semaines. Utiliser 2-3 càs par bol de ramen."
+  },
+  {
+    "nom": "Marinade Teriyaki Maison",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "80ml sauce soja\n60ml mirin\n60ml saké\n2 càs sucre\n1 càs miel\n2 gousses d'ail\n1 morceau de gingembre (2cm)",
+    "instructions": "1. Mélanger tous les ingrédients dans une casserole.\n2. Chauffer à feu moyen jusqu'à dissolution du sucre.\n3. Laisser réduire 5 min pour épaissir légèrement.\n4. Laisser refroidir.\n5. Mariner viande ou poisson 30 min minimum avant cuisson."
+  },
+  {
+    "nom": "Nuoc Cham Vietnamien",
+    "categorie": "Sauce & Marinade",
+    "temps": 5,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "4 càs sauce poisson (nuoc mam)\n4 càs eau tiède\n2 càs jus de citron vert\n1 càs sucre\n2 gousses d'ail\n1 piment rouge\nCarotte râpée (optionnel)",
+    "instructions": "1. Dissoudre le sucre dans l'eau tiède.\n2. Ajouter la sauce poisson et le jus de citron vert.\n3. Incorporer l'ail haché et le piment émincé.\n4. Goûter et ajuster l'équilibre sucré/salé/acide.\n5. Servir comme sauce trempette ou vinaigrette."
+  },
+  {
+    "nom": "Marinade Bulgogi Coréenne",
+    "categorie": "Sauce & Marinade",
+    "temps": 10,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "80ml sauce soja\n3 càs sucre brun\n3 càs mirin\n1 poire asiatique râpée\n5 gousses d'ail\n1 morceau de gingembre (2cm)\n2 càs huile de sésame\n2 oignons verts\nPoivre noir",
+    "instructions": "1. Râper la poire (attendrit naturellement la viande).\n2. Mélanger avec la sauce soja, le sucre et le mirin.\n3. Ajouter l'ail, le gingembre râpés et l'huile de sésame.\n4. Incorporer les oignons verts émincés.\n5. Mariner la viande (boeuf tranché fin) 2h minimum."
+  },
+  {
+    "nom": "Sauce Satay Thaïe",
+    "categorie": "Sauce & Marinade",
+    "temps": 15,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "200ml lait de coco\n4 càs beurre de cacahuète\n2 càs sauce soja\n1 càs sauce poisson\n1 càs sucre de palme\n1 càs pâte de curry rouge\n1 citron vert (jus)\n1 tige de citronnelle",
+    "instructions": "1. Faire chauffer le lait de coco avec la citronnelle écrasée.\n2. Ajouter la pâte de curry, cuire 2 min.\n3. Incorporer le beurre de cacahuète, bien mélanger.\n4. Ajouter sauce soja, sauce poisson et sucre.\n5. Finir avec le jus de citron vert. Servir tiède avec brochettes."
+  },
+  {
+    "nom": "Nam Jim Thaïe",
+    "categorie": "Sauce & Marinade",
+    "temps": 5,
+    "portions": 4,
+    "difficulte": "Facile",
+    "ingredients": "3 càs sauce poisson\n3 càs jus de citron vert\n1 càs sucre de palme\n3 gousses d'ail\n2 piments verts\n1 bouquet de coriandre\n2 oignons verts",
+    "instructions": "1. Piler l'ail et les piments au mortier.\n2. Ajouter le sucre, continuer à piler.\n3. Incorporer la sauce poisson et le citron vert.\n4. Goûter pour équilibrer les saveurs.\n5. Ajouter coriandre et oignons verts hachés. Servir frais."
+  }
+]
