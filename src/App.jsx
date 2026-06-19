@@ -898,15 +898,15 @@ function DiscoveryTab({toast}){
       const res=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query})});
       const data=await res.json();
       const EMOJIS=["🍽️","🥗","🍲","🥘","🍜","🥩","🐟","🥦","🍋","🫐"];
-      const arr=(data.results||[]).slice(0,7).map((r,i)=>({
-        titre:r.titre.replace(/- Marmiton|- CuisineAZ|- 750g|- Chef Simon/gi,"").trim(),
+      const arr=(data.results||[]).slice(0,9).map((r,i)=>({
+        titre:(r.titre||"").replace(/[-|]\s*(Marmiton|CuisineAZ|750g|Chef Simon|Cuisine AZ|Recette)\s*$/gi,"").trim(),
         description:r.description,
         url:r.url,
         source:r.source,
-        categorie:"Dîner",
-        temps:null,
-        difficulte:null,
-        emoji:EMOJIS[i%EMOJIS.length],
+        categorie:r.categorie||"Dîner",
+        temps:r.temps||null,
+        difficulte:r.difficulte||null,
+        emoji:r.emoji||EMOJIS[i%EMOJIS.length],
       }));
       setCards(arr);
     }catch(e){console.error(e);}
