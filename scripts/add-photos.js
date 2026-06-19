@@ -1,9 +1,7 @@
-// Script: ajoute des photos aux recettes Notion qui n'en ont pas
-// Usage: NOTION_TOKEN=xxx GOOGLE_SEARCH_API_KEY=xxx GOOGLE_SEARCH_CX=xxx node scripts/add-photos.js
+// Script: ajoute des photos aux recettes Notion
+// Usage: NOTION_TOKEN=xxx node scripts/add-photos.js
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
-const GOOGLE_API_KEY = process.env.GOOGLE_SEARCH_API_KEY;
-const GOOGLE_CX = process.env.GOOGLE_SEARCH_CX;
 const DB_RECETTES = '39c7b0f8-bf02-4893-bc05-6d82b8c38617';
 
 async function notionFetch(path, method = 'GET', body = null) {
@@ -34,20 +32,68 @@ async function getRecettesWithoutPhoto() {
   return recettes;
 }
 
-async function findPhoto(nom) {
-  const query = `${nom} recette plat cuisiné`;
-  const url = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_API_KEY}&cx=${GOOGLE_CX}&q=${encodeURIComponent(query)}&searchType=image&num=5&imgType=photo&imgSize=large&safe=active&gl=fr`;
-  const res = await fetch(url);
+// Dictionnaire FR -> EN pour meilleurs résultats
+const TRANSLATIONS = {
+  'poulet':'chicken','boeuf':'beef','porc':'pork','saumon':'salmon',
+  'cabillaud':'cod','merlu':'hake','bar':'sea bass','thon':'tuna',
+  'crevettes':'shrimp','moules':'mussels','pâtes':'pasta','riz':'rice',
+  'farfalle':'pasta farfalle','orecchiette':'pasta','nouilles':'noodles',
+  'curry':'curry','salade':'salad','soupe':'soup','tarte':'tart',
+  'tomate':'tomato','champignon':'mushroom','quinoa':'quinoa',
+  'citron':'lemon','épinards':'spinach','artichauts':'artichoke',
+  'courgette':'zucchini','aubergine':'eggplant','poivron':'bell pepper',
+  'vietnamien':'vietnamese','japonais':'japanese','italien':'italian',
+  'marocain':'moroccan','thaï':'thai','libanais':'lebanese',
+  'cappuccino':'cappuccino','roulés':'rolls','tatin':'tarte tatin',
+  'petits pois':'peas','jambon':'ham','bacon':'bacon','lait de coco':'coconut milk',
+  'mozzarella':'mozzarella','pesto':'pesto','menthe':'mint',
+  'citronnelle':'lemongrass','olives':'olives'
+};
+
+function translateQuery(nom) {
+  let q = nom.toLowerCase();
+  for (const [fr, en] of Object.entries(TRANSLATIONS)) {
+    q = q.replace(new RegExp(fr, 'g'), en);
+  }
+  // Nettoyer les mots français résiduels communs
+  q = q.replace(/\b(au|aux|à|la|le|les|de|du|des|et|en|avec|sur)\b/g, ' ');
+  q = q.replace(/\s+/g, ' ').trim();
+  return `${q} food dish`;
+}
+
+// Foodish API - photos de plats aléatoires par catégorie (sans clé)
+async function findPhotoFoodish(nom) {
+  const categories = ['burger','butter-chicken','dessert','dosa','idly','pasta','pizza','rice','samosa','soup'];
+  const nomLower = nom.toLowerCase();
+  let cat = 'pasta';
+  if (nomLower.includes('soupe') || nomLower.includes('cappuccino')) cat = 'soup';
+  else if (nomLower.includes('dessert') || nomLower.includes('tarte') || nomLower.includes('tatin')) cat = 'dessert';
+  else if (nomLower.includes('riz') || nomLower.includes('curry')) cat = 'rice';
+  else if (nomLower.includes('pizza')) cat = 'pizza';
+  else if (nomLower.includes('burger')) cat = 'burger';
+  
+  const res = await fetch(`https://foodish-api.com/api/images/${cat}`);
   const data = await res.json();
-  const items = data.items || [];
-  // Préférer images jpg/png https, éviter les SVG et logos
-  const item = items.find(i =>
-    i.link?.startsWith('https') &&
-    !i.link.includes('logo') &&
-    !i.link.endsWith('.svg') &&
-    (i.link.includes('.jpg') || i.link.includes('.jpeg') || i.link.includes('.png') || i.link.includes('.webp'))
-  ) || items.find(i => i.link?.startsWith('https'));
-  return item?.link || null;
+  return data.image || null;
+}
+
+// Unsplash Source (sans clé, URL directe)
+function getUnsplashUrl(nom) {
+  const q = encodeURIComponent(translateQuery(nom));
+  // URL aléatoire Unsplash par query - retourne directement une image
+  return `https://source.unsplash.com/800x600/?${q}`;
+}
+
+async function resolveUnsplashUrl(nom) {
+  // source.unsplash.com redirige vers l'image finale - on suit la redirection
+  const url = getUnsplashUrl(nom);
+  try {
+    const res = await fetch(url, { redirect: 'follow' });
+    if (res.ok && res.url !== url) return res.url; // URL finale après redirect
+    return url; // fallback: URL source directe
+  } catch {
+    return url;
+  }
 }
 
 async function updatePhoto(pageId, photoUrl) {
@@ -57,8 +103,8 @@ async function updatePhoto(pageId, photoUrl) {
 }
 
 async function main() {
-  if (!NOTION_TOKEN || !GOOGLE_API_KEY || !GOOGLE_CX) {
-    console.error('❌ Variables manquantes: NOTION_TOKEN, GOOGLE_SEARCH_API_KEY, GOOGLE_SEARCH_CX');
+  if (!NOTION_TOKEN) {
+    console.error('❌ NOTION_TOKEN manquant. Usage: NOTION_TOKEN=xxx node scripts/add-photos.js');
     process.exit(1);
   }
 
@@ -72,7 +118,8 @@ async function main() {
     const nom = page.properties?.['Nom']?.title?.[0]?.plain_text || 'Sans titre';
     process.stdout.write(`🖼️  ${nom}... `);
     try {
-      const photoUrl = await findPhoto(nom);
+      // Unsplash Source (sans clé)
+      const photoUrl = await resolveUnsplashUrl(nom);
       if (photoUrl) {
         await updatePhoto(page.id, photoUrl);
         console.log(`✓`);
@@ -81,8 +128,7 @@ async function main() {
         console.log(`⚠️  aucune image`);
         skip++;
       }
-      // Pause 600ms pour rester dans la limite Google (100 req/jour)
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise(r => setTimeout(r, 500));
     } catch (e) {
       console.log(`❌ ${e.message}`);
       skip++;
