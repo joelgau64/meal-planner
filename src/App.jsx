@@ -894,7 +894,7 @@ function DiscoveryTab({toast}){
     if(!prompt.trim())return;
     setLoading(true);setCards([]);setCurrent(0);setLiked([]);setDone(false);
     try{
-      const query=`recette ${prompt} site:marmiton.org OR site:cuisineaz.com OR site:750g.com OR site:chef-simon.com`;
+      const query=`recette ${prompt}`;
       const res=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query})});
       const data=await res.json();
       const EMOJIS=["🍽️","🥗","🍲","🥘","🍜","🥩","🐟","🥦","🍋","🫐"];
