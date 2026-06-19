@@ -872,12 +872,219 @@ function CoursesTab({toast}){
   );
 }
 
+// ── Discovery Tab ─────────────────────────────────────────────────────────────
+function DiscoveryTab({toast}){
+  const [prompt,setPrompt]=useState("");
+  const [cards,setCards]=useState([]);
+  const [current,setCurrent]=useState(0);
+  const [loading,setLoading]=useState(false);
+  const [importing,setImporting]=useState(false);
+  const [done,setDone]=useState(false);
+  const [liked,setLiked]=useState([]);
+  const [dragX,setDragX]=useState(0);
+  const [dragging,setDragging]=useState(false);
+  const startX=useRef(null);
+  const cardRef=useRef(null);
+
+  const inputStyle={width:"100%",padding:"12px 16px",background:"#0F172A",border:"1px solid #1E293B",borderRadius:10,color:"#F8FAFC",fontSize:15,fontFamily:"inherit",outline:"none"};
+  const btnPrimary={padding:"12px 24px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",fontFamily:"inherit",width:"100%"};
+  const btnDisabled={...btnPrimary,opacity:0.4,cursor:"not-allowed"};
+
+  async function search(){
+    if(!prompt.trim())return;
+    setLoading(true);setCards([]);setCurrent(0);setLiked([]);setDone(false);
+    const result=await claudeJSON(
+      "Tu es un chef cuisinier expert. Retourne UNIQUEMENT un tableau JSON valide, sans backticks ni texte autour.",
+      `L'utilisateur veut: "${prompt}". Trouve 7 recettes adaptées sur internet. Pour chacune retourne: {"titre":"...","description":"courte description appétissante 1-2 phrases","categorie":"Déjeuner|Dîner|Dessert|Petit-déjeuner|Snack","temps":30,"difficulte":"Facile|Moyen|Difficile","url":"URL source réelle de la recette","emoji":"emoji représentatif du plat"}. Retourne un tableau JSON de 7 objets.`,
+      true
+    );
+    const arr=Array.isArray(result)?result:(result?.recettes||[]);
+    setCards(arr);setLoading(false);
+  }
+
+  function swipe(dir){
+    if(current>=cards.length)return;
+    if(dir==="right")setLiked(l=>[...l,cards[current]]);
+    setCurrent(c=>c+1);
+    setDragX(0);
+  }
+
+  // Touch/mouse drag
+  function onPointerDown(e){
+    startX.current=e.clientX??e.touches?.[0]?.clientX;
+    setDragging(true);
+  }
+  function onPointerMove(e){
+    if(!dragging||startX.current==null)return;
+    const x=(e.clientX??e.touches?.[0]?.clientX)-startX.current;
+    setDragX(x);
+  }
+  function onPointerUp(){
+    if(Math.abs(dragX)>80)swipe(dragX>0?"right":"left");
+    else setDragX(0);
+    setDragging(false);startX.current=null;
+  }
+
+  async function importLiked(){
+    if(!liked.length)return;
+    setImporting(true);
+    let ok=0;
+    for(const card of liked){
+      try{
+        const recipe=await claudeJSON(
+          "Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",
+          `Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${card.url}\n\n${RECIPE_JSON_PROMPT}`,
+          true
+        );
+        if(recipe?.nom){
+          await notionCreate(DB_RECETTES,{
+            "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
+            "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
+            "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
+            "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
+            "Source":nText(card.url||""),
+          });
+          ok++;
+        }
+      }catch(e){console.error(e);}
+    }
+    setImporting(false);setDone(true);
+    toast(`${ok} recette${ok>1?"s":""} importée${ok>1?"s":""} dans Notion ✓`);
+  }
+
+  const card=cards[current];
+  const isLast=current>=cards.length&&cards.length>0;
+  const rotation=dragX/20;
+  const likeOpacity=Math.min(1,dragX/60);
+  const skipOpacity=Math.min(1,-dragX/60);
+
+  return(
+    <div style={{maxWidth:480,margin:"0 auto",paddingTop:16}}>
+      {/* Prompt */}
+      <div style={{marginBottom:24}}>
+        <p style={{color:"#94A3B8",fontSize:14,marginBottom:12,marginTop:0}}>Décris ce que tu veux cuisiner — occasion, contraintes, saison, nombre de repas…</p>
+        <textarea
+          value={prompt} onChange={e=>setPrompt(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();search();}}}
+          placeholder="Ex: 5 repas légers pour une semaine de canicule, pas de viande rouge"
+          rows={3}
+          style={{...inputStyle,resize:"vertical",lineHeight:1.5}}
+        />
+        <button onClick={search} disabled={loading||!prompt.trim()} style={{...(loading||!prompt.trim()?btnDisabled:btnPrimary),marginTop:10}}>
+          {loading?"Recherche en cours…":"✨ Trouver des recettes"}
+        </button>
+      </div>
+
+      {/* Swipe area */}
+      {cards.length>0&&!isLast&&(
+        <div style={{position:"relative",height:400}}>
+          {/* Progress */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <span style={{color:"#64748B",fontSize:13}}>{current+1} / {cards.length}</span>
+            <div style={{display:"flex",gap:4}}>
+              {cards.map((_,i)=>(
+                <div key={i} style={{width:20,height:3,borderRadius:2,background:i<current?"#C2622D":i===current?"#F8FAFC":"#1E293B"}}/>
+              ))}
+            </div>
+            <span style={{color:"#C2622D",fontSize:13,fontWeight:600}}>❤️ {liked.length}</span>
+          </div>
+
+          {/* Card stack hint */}
+          {current+1<cards.length&&(
+            <div style={{position:"absolute",top:12,left:"50%",transform:"translateX(-50%)",width:"92%",height:380,background:"#0F172A",borderRadius:20,border:"1px solid #1E293B"}}/>
+          )}
+
+          {/* Main card */}
+          <div
+            ref={cardRef}
+            onMouseDown={onPointerDown} onMouseMove={onPointerMove} onMouseUp={onPointerUp} onMouseLeave={onPointerUp}
+            onTouchStart={onPointerDown} onTouchMove={onPointerMove} onTouchEnd={onPointerUp}
+            style={{
+              position:"absolute",top:0,left:0,right:0,
+              background:"linear-gradient(145deg,#0F172A,#1E293B)",
+              border:"1px solid #334155",borderRadius:20,padding:28,
+              transform:`translateX(${dragX}px) rotate(${rotation}deg)`,
+              transition:dragging?"none":"transform 0.3s ease",
+              cursor:"grab",userSelect:"none",
+              boxShadow:"0 20px 60px rgba(0,0,0,0.5)",
+              height:380,display:"flex",flexDirection:"column",justifyContent:"space-between"
+            }}
+          >
+            {/* Like/Skip overlay */}
+            {dragX>20&&(
+              <div style={{position:"absolute",top:24,right:24,padding:"8px 16px",border:"3px solid #4ADE80",borderRadius:8,color:"#4ADE80",fontWeight:800,fontSize:18,opacity:likeOpacity,transform:"rotate(-15deg)"}}>❤️ OUI</div>
+            )}
+            {dragX<-20&&(
+              <div style={{position:"absolute",top:24,left:24,padding:"8px 16px",border:"3px solid #F87171",borderRadius:8,color:"#F87171",fontWeight:800,fontSize:18,opacity:skipOpacity,transform:"rotate(15deg)"}}>✕ SKIP</div>
+            )}
+
+            <div>
+              <div style={{fontSize:48,marginBottom:12,textAlign:"center"}}>{card.emoji||"🍽️"}</div>
+              <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+                <span style={{padding:"3px 10px",background:"#1E293B",borderRadius:20,fontSize:12,color:"#94A3B8"}}>{card.categorie}</span>
+                <span style={{padding:"3px 10px",background:"#1E293B",borderRadius:20,fontSize:12,color:"#94A3B8"}}>⏱ {card.temps} min</span>
+                <span style={{padding:"3px 10px",background:"#1E293B",borderRadius:20,fontSize:12,color:"#94A3B8"}}>{card.difficulte}</span>
+              </div>
+              <h2 style={{margin:"0 0 10px",fontSize:22,fontWeight:700,fontFamily:"'Playfair Display',serif",color:"#F8FAFC",lineHeight:1.3}}>{card.titre}</h2>
+              <p style={{margin:0,color:"#94A3B8",fontSize:14,lineHeight:1.6}}>{card.description}</p>
+            </div>
+            {card.url&&(
+              <a href={card.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{color:"#C2622D",fontSize:12,textDecoration:"none",marginTop:8}}>🔗 Voir la source</a>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div style={{display:"flex",gap:16,marginTop:400,paddingTop:16,justifyContent:"center"}}>
+            <button onClick={()=>swipe("left")} style={{width:64,height:64,borderRadius:"50%",background:"#1E293B",border:"2px solid #F87171",color:"#F87171",fontSize:24,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            <button onClick={()=>swipe("right")} style={{width:64,height:64,borderRadius:"50%",background:"#1E293B",border:"2px solid #4ADE80",color:"#4ADE80",fontSize:24,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>❤️</button>
+          </div>
+        </div>
+      )}
+
+      {/* End screen */}
+      {isLast&&(
+        <div style={{textAlign:"center",padding:40,background:"#0F172A",borderRadius:20,border:"1px solid #1E293B"}}>
+          <div style={{fontSize:48,marginBottom:16}}>🎉</div>
+          <h3 style={{margin:"0 0 8px",color:"#F8FAFC",fontSize:20}}>Tu as vu toutes les recettes !</h3>
+          <p style={{color:"#64748B",marginBottom:24}}>{liked.length} recette{liked.length>1?"s":""} sélectionnée{liked.length>1?"s":""}</p>
+          {liked.length>0&&(
+            <>
+              <div style={{marginBottom:20,textAlign:"left"}}>
+                {liked.map((c,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#1E293B",borderRadius:10,marginBottom:8}}>
+                    <span style={{fontSize:20}}>{c.emoji||"🍽️"}</span>
+                    <span style={{color:"#F8FAFC",fontSize:14,fontWeight:500}}>{c.titre}</span>
+                  </div>
+                ))}
+              </div>
+              <button onClick={importLiked} disabled={importing||done} style={importing||done?btnDisabled:btnPrimary}>
+                {done?"✓ Importées dans Notion !":importing?`Import en cours… (${liked.length} recettes)`:`⬆️ Importer ${liked.length} recette${liked.length>1?"s":""} dans Notion`}
+              </button>
+            </>
+          )}
+          <button onClick={()=>{setCards([]);setCurrent(0);setLiked([]);setDone(false);setPrompt("");}} style={{marginTop:12,padding:"10px 20px",background:"transparent",border:"1px solid #334155",borderRadius:10,color:"#64748B",cursor:"pointer",fontFamily:"inherit",fontSize:14}}>
+            Nouvelle recherche
+          </button>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading&&cards.length===0&&!isLast&&(
+        <div style={{textAlign:"center",padding:60,color:"#334155"}}>
+          <div style={{fontSize:48,marginBottom:12}}>✨</div>
+          <p style={{margin:0,fontSize:15}}>Décris ce que tu veux cuisiner ci-dessus</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App(){
   const [tab,setTab]=useState("recettes");
   const [toastMsg,setToastMsg]=useState(null);
   const toast=msg=>setToastMsg(msg);
-  const tabs=[{id:"recettes",label:"Recettes",icon:"book"},{id:"planning",label:"Planning",icon:"calendar"},{id:"courses",label:"Courses",icon:"cart"}];
+  const tabs=[{id:"recettes",label:"Recettes",icon:"book"},{id:"planning",label:"Planning",icon:"calendar"},{id:"courses",label:"Courses",icon:"cart"},{id:"discovery",label:"Découverte",icon:"sparkle"}];
 
   return(
     <div style={{minHeight:"100vh",background:"#020617",color:"#F8FAFC",fontFamily:"'DM Sans', system-ui, sans-serif"}}>
@@ -903,6 +1110,7 @@ export default function App(){
         {tab==="recettes"&&<RecettesTab toast={toast}/>}
         {tab==="planning"&&<PlanningTab toast={toast}/>}
         {tab==="courses"&&<CoursesTab toast={toast}/>}
+        {tab==="discovery"&&<DiscoveryTab toast={toast}/>}
       </div>
       {toastMsg&&<Toast message={toastMsg} onClose={()=>setToastMsg(null)}/>}
     </div>
