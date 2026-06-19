@@ -301,6 +301,9 @@ function AddToPlanningModal({recette,portions,mode,onClose,toast}){
   const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const [moment,setMoment]=useState("Dîner");
   const [saving,setSaving]=useState(false);
+  const [showCoursesModal,setShowCoursesModal]=useState(false);
+  const [coursesSelection,setCoursesSelection]=useState([]);
+  const [generatingCourses,setGeneratingCourses]=useState(false);
 
   const save=async()=>{
     setSaving(true);
@@ -398,6 +401,9 @@ function AddRecipeModal({onClose,onSaved}){
   const [method,setMethod]=useState(null);
   const [form,setForm]=useState({...EMPTY_FORM});
   const [saving,setSaving]=useState(false);
+  const [showCoursesModal,setShowCoursesModal]=useState(false);
+  const [coursesSelection,setCoursesSelection]=useState([]);
+  const [generatingCourses,setGeneratingCourses]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
   const [photoPreview,setPhotoPreview]=useState(null);
   const [url,setUrl]=useState("");
@@ -589,6 +595,9 @@ function PlanningTab({toast}){
   const [form,setForm]=useState({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
   const [suggestions,setSuggestions]=useState([]);
   const [saving,setSaving]=useState(false);
+  const [showCoursesModal,setShowCoursesModal]=useState(false);
+  const [coursesSelection,setCoursesSelection]=useState([]);
+  const [generatingCourses,setGeneratingCourses]=useState(false);
 
   const getWeekDates=(offset=0)=>{
     const now=new Date();const day=now.getDay();
@@ -680,6 +689,15 @@ function PlanningTab({toast}){
         </div>
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>load(true)} style={{padding:"8px 10px",background:"#0F172A",border:"1px solid #1E293B",borderRadius:8,color:"#64748B",cursor:"pointer"}}><Icon name="refresh" size={14}/></button>
+          <button onClick={()=>{
+            const meals=[...queueItems,...planning.filter(p=>!p.queue&&weekDates.some(d=>d.toISOString().split("T")[0]===p.date))];
+            const unique=[];const seen=new Set();
+            meals.forEach(m=>{const k=m.recette||m.repas;if(k&&!seen.has(k)){seen.add(k);unique.push(m);}});
+            setCoursesSelection(unique.map(m=>({...m,selected:true})));
+            setShowCoursesModal(true);
+          }} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#0F172A",border:"1px solid #1E293B",borderRadius:8,color:"#64748B",cursor:"pointer",fontSize:13,fontWeight:600}}>
+            <Icon name="cart" size={15}/>Courses
+          </button>
           <button onClick={()=>setShowForm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/>Ajouter</button>
         </div>
       </div>
@@ -737,6 +755,63 @@ function PlanningTab({toast}){
         </div>
       )}
 
+      {showCoursesModal&&(
+        <Modal title="🛒 Générer la liste de courses" onClose={()=>setShowCoursesModal(false)}>
+          <p style={{fontSize:13,color:"#94A3B8",marginBottom:16}}>Sélectionne les recettes à inclure dans ta liste de courses :</p>
+          {coursesSelection.length===0&&<p style={{fontSize:13,color:"#64748B",textAlign:"center",padding:"16px 0"}}>Aucune recette en file d'attente ou planifiée cette semaine.</p>}
+          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+            {coursesSelection.map((m,i)=>(
+              <div key={i} onClick={()=>setCoursesSelection(s=>s.map((x,j)=>j===i?{...x,selected:!x.selected}:x))}
+                style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:m.selected?"#1E293B":"#0F172A",border:`1px solid ${m.selected?"#C2622D":"#1E293B"}`,borderRadius:8,cursor:"pointer"}}>
+                <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${m.selected?"#C2622D":"#334155"}`,background:m.selected?"#C2622D":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                  {m.selected&&<Icon name="check" size={12}/>}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:600,color:"#F8FAFC"}}>{m.recette||m.repas}</div>
+                  <div style={{fontSize:11,color:"#64748B"}}>{m.queue?"File d'attente":m.date} · {m.portions||4} personnes</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button disabled={generatingCourses||coursesSelection.filter(m=>m.selected).length===0}
+            onClick={async()=>{
+              setGeneratingCourses(true);
+              const selected=coursesSelection.filter(m=>m.selected);
+              let totalAdded=0;
+              const semaine=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
+              for(const meal of selected){
+                const recetteNom=meal.recette||meal.repas;
+                const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===recetteNom);
+                if(!recetteData?.ingredients){continue;}
+                const lines=recetteData.ingredients.split("\n").filter(l=>l.trim());
+                for(const line of lines){
+                  const trimmed=line.replace(/^[-•*\d.]+\s*/,"").trim();
+                  if(!trimmed)continue;
+                  const parts=trimmed.match(/^([\d,./]+\s*(?:g|kg|ml|L|cl|càs|càc|cup|oz)?)?\s*(.+)/i);
+                  const qty=parts?.[1]?.trim()||"";
+                  const nom=parts?.[2]?.trim()||trimmed;
+                  await notionCreate(DB_COURSES,{
+                    "Article":nTitle(nom),
+                    "Catégorie":nSel(guessCategory(nom)),
+                    "Quantité":nText(qty),
+                    "Acheté":nCheck(false),
+                    "Semaine":nText(`Sem. du ${semaine}`),
+                    "Recette":nText(recetteNom),
+                  });
+                  totalAdded++;
+                }
+              }
+              setGeneratingCourses(false);
+              setShowCoursesModal(false);
+              toast(`${totalAdded} articles ajoutés à la liste de courses ✓`);
+              setCache("courses",null);
+            }}
+            style={coursesSelection.filter(m=>m.selected).length>0&&!generatingCourses?btnPrimary:btnDisabled}>
+            {generatingCourses?"Génération en cours...":"Générer pour "+coursesSelection.filter(m=>m.selected).length+" recette(s)"}
+          </button>
+        </Modal>
+      )}
+
       {showForm&&(
         <Modal title="Ajouter au planning" onClose={()=>setShowForm(false)}>
           <Field label="Recette">
@@ -783,6 +858,9 @@ function CoursesTab({toast}){
   const [sortBy,setSortBy]=useState("categorie"); // "categorie" | "recette"
   const [form,setForm]=useState({article:"",categorie:"Épicerie",quantite:"",semaine:"",recette:""});
   const [saving,setSaving]=useState(false);
+  const [showCoursesModal,setShowCoursesModal]=useState(false);
+  const [coursesSelection,setCoursesSelection]=useState([]);
+  const [generatingCourses,setGeneratingCourses]=useState(false);
 
   const load=useCallback(async(force=false)=>{
     const cached=getCached("courses");
