@@ -1,19 +1,17 @@
-// Script: ajoute des photos aux recettes Notion via Google Custom Search Images
+// Script: ajoute des photos aux recettes Notion via Pexels
 // Usage:
-//   Windows: $env:NOTION_TOKEN="secret_xxx"; $env:GOOGLE_SEARCH_API_KEY="xxx"; $env:GOOGLE_SEARCH_CX="xxx"; node scripts/add-photos.js
-//   Mac/Linux: NOTION_TOKEN=xxx GOOGLE_SEARCH_API_KEY=xxx GOOGLE_SEARCH_CX=xxx node scripts/add-photos.js
+//   $env:NOTION_TOKEN="secret_xxx"
+//   $env:PEXELS_API_KEY="ta_clé_pexels"
+//   node scripts/add-photos.js
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
-const GOOGLE_API_KEY = process.env.GOOGLE_SEARCH_API_KEY;
-const GOOGLE_CX = process.env.GOOGLE_SEARCH_CX;
+const PEXELS_API_KEY = process.env.PEXELS_API_KEY;
 const DB_RECETTES = '39c7b0f8-bf02-4893-bc05-6d82b8c38617';
 
-if (!NOTION_TOKEN || !GOOGLE_API_KEY || !GOOGLE_CX) {
-  console.error('❌ Variables manquantes. Usage:');
+if (!NOTION_TOKEN || !PEXELS_API_KEY) {
+  console.error('❌ Variables manquantes:');
   console.error('   $env:NOTION_TOKEN="secret_xxx"');
-  console.error('   $env:GOOGLE_SEARCH_API_KEY="xxx"');
-  console.error('   $env:GOOGLE_SEARCH_CX="c16fa150d77c3479c"');
-  console.error('   node scripts/add-photos.js');
+  console.error('   $env:PEXELS_API_KEY="ta_clé_pexels"');
   process.exit(1);
 }
 
@@ -45,37 +43,40 @@ async function getRecettesWithoutPhoto() {
   return recettes;
 }
 
-async function findPhoto(nom) {
-  const query = `${nom} recette plat cuisiné`;
-  const url = `https://www.googleapis.com/customsearch/v1`
-    + `?key=${GOOGLE_API_KEY}`
-    + `&cx=${GOOGLE_CX}`
-    + `&q=${encodeURIComponent(query)}`
-    + `&searchType=image`
-    + `&num=5`
-    + `&imgType=photo`
-    + `&imgSize=large`
-    + `&safe=active`
-    + `&gl=fr`
-    + `&lr=lang_fr`;
+// Dictionnaire FR -> EN pour meilleurs résultats Pexels
+const TR = {
+  'poulet':'chicken','boeuf':'beef','porc':'pork','saumon':'salmon',
+  'cabillaud':'cod fish','merlu':'hake','bar':'sea bass','thon':'tuna',
+  'crevettes':'shrimp','pâtes':'pasta','farfalle':'pasta','orecchiette':'pasta',
+  'nouilles':'noodles','riz':'rice','curry':'curry','salade':'salad',
+  'soupe':'soup','tarte':'tart','tomate':'tomato','champignon':'mushroom',
+  'quinoa':'quinoa','citron':'lemon','épinards':'spinach','courgette':'zucchini',
+  'aubergine':'eggplant','artichaut':'artichoke','petits pois':'peas',
+  'jambon':'ham','bacon':'bacon','mozzarella':'mozzarella','pesto':'pesto',
+  'citronnelle':'lemongrass','olives':'olives','cappuccino':'soup mushroom',
+  'tatin':'tart tomato','roulés':'rolls fish','vietnamien':'vietnamese food',
+  'japonais':'japanese food','italien':'italian food','marocain':'moroccan food',
+  'brocoli':'broccoli','lait de coco':'coconut curry'
+};
 
-  const res = await fetch(url);
-  const data = await res.json();
-
-  if (data.error) {
-    throw new Error(`Google API: ${data.error.message}`);
+function toEnglish(nom) {
+  let q = nom.toLowerCase();
+  for (const [fr, en] of Object.entries(TR)) {
+    q = q.replace(new RegExp(fr, 'gi'), en);
   }
+  q = q.replace(/\b(au|aux|à|la|le|les|de|du|des|et|en|avec|sur|ma|mon)\b/gi, ' ');
+  return q.replace(/\s+/g, ' ').trim() + ' food dish';
+}
 
-  const items = data.items || [];
-  // Préférer JPG/PNG HTTPS, éviter logos et SVG
-  const item = items.find(i =>
-    i.link?.startsWith('https') &&
-    !i.link.includes('logo') &&
-    !i.link.endsWith('.svg') &&
-    !i.link.endsWith('.gif')
-  ) || items.find(i => i.link?.startsWith('https'));
-
-  return item?.link || null;
+async function findPhoto(nom) {
+  const query = toEnglish(nom);
+  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=5&orientation=landscape`;
+  const res = await fetch(url, {
+    headers: { 'Authorization': PEXELS_API_KEY }
+  });
+  const data = await res.json();
+  // Prendre la première photo en format large
+  return data.photos?.[0]?.src?.large2x || data.photos?.[0]?.src?.large || null;
 }
 
 async function updatePhoto(pageId, photoUrl) {
@@ -90,13 +91,9 @@ async function main() {
   const recettes = await getRecettesWithoutPhoto();
   console.log(`📋 ${recettes.length} recettes sans photo\n`);
 
-  if (recettes.length === 0) {
-    console.log('✅ Toutes les recettes ont déjà une photo !');
-    return;
-  }
+  if (!recettes.length) { console.log('✅ Toutes les recettes ont une photo !'); return; }
 
   let ok = 0, skip = 0;
-
   for (const page of recettes) {
     const nom = page.properties?.['Nom']?.title?.[0]?.plain_text || 'Sans titre';
     process.stdout.write(`🖼️  ${nom}... `);
@@ -104,22 +101,19 @@ async function main() {
       const photoUrl = await findPhoto(nom);
       if (photoUrl) {
         await updatePhoto(page.id, photoUrl);
-        console.log(`✓`);
+        console.log('✓');
         ok++;
       } else {
-        console.log(`⚠️  aucune image trouvée`);
+        console.log('⚠️  aucune image');
         skip++;
       }
-      // 700ms entre chaque requête pour rester dans les limites Google (100 req/jour)
-      await new Promise(r => setTimeout(r, 700));
+      await new Promise(r => setTimeout(r, 300));
     } catch (e) {
       console.log(`❌ ${e.message}`);
       skip++;
     }
   }
-
   console.log(`\n✅ ${ok} photos ajoutées, ${skip} ignorées`);
-  if (ok + skip > 50) console.log('⚠️  Attention: quota Google proche (100 req/jour)');
 }
 
 main().catch(console.error);
