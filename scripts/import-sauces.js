@@ -49,7 +49,6 @@ async function createPage(recette, photo) {
       'Catégorie': { select: { name: recette.categorie } },
       'Temps de préparation': { number: recette.temps },
       'Portions': { number: recette.portions },
-      'Difficulté': { select: { name: recette.difficulte } },
       'Ingrédients': { rich_text: [{ text: { content: recette.ingredients } }] },
       'Instructions': { rich_text: [{ text: { content: recette.instructions } }] },
       'Note': { select: { name: '***' } },
