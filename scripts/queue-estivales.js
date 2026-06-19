@@ -49,12 +49,11 @@ async function addToQueue(nom, recetteId) {
   const res = await notionFetch('/v1/pages', 'POST', {
     parent: { database_id: DB_PLANNING },
     properties: {
-      'Nom': { title: [{ text: { content: nom } }] },
+      'Repas': { title: [{ text: { content: nom } }] },
       'Recette ID': { rich_text: [{ text: { content: recetteId || '' } }] },
       'Recette': { rich_text: [{ text: { content: nom } }] },
       'File d\'attente': { checkbox: true },
       'Portions': { number: 4 },
-      'Acheté': { checkbox: false },
     }
   });
   if (res.object === 'error') throw new Error(res.message);
