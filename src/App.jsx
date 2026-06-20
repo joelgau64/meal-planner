@@ -6,7 +6,7 @@ const DB_COURSES = "35f5b3b5-095f-4998-a014-9a112807e711";
 
 const DAYS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner","Snack"];
-const MOMENT_COLORS = {"Déjeuner":"#3B82F6","Dîner":"#8B5CF6"};
+const MOMENT_COLORS = {"Déjeuner":"#C2622D","Dîner":"#475569"};
 const CAT_COLORS = {"Fruits & Légumes":"#16A34A","Viandes & Poissons":"#DC2626","Produits laitiers":"#2563EB","Épicerie":"#EA580C","Surgelés":"#7C3AED","Boissons":"#0891B2","Autre":"#6B7280"};
 const EMPTY_FORM = {nom:"",categorie:"Dîner",temps:"",portions:4,ingredients:"",instructions:"",tags:[],note:"***",photoUrl:"",sourceUrl:""};
 const DEFAULT_PORTIONS = 4;
@@ -856,6 +856,19 @@ function PlanningTab({toast}){
   const [dragItem,setDragItem]=useState(null);
   const [dragOver,setDragOver]=useState(null);
   const touchDragRef=useRef(null); // {item, ghost, startX, startY}
+
+  // Cleanup global si touch annulé
+  useEffect(()=>{
+    const cleanup=()=>{
+      if(touchDragRef.current?.ghost){
+        try{touchDragRef.current.ghost.remove();}catch(e){}
+        touchDragRef.current=null;
+      }
+      setDragItem(null);setDragOver(null);
+    };
+    window.addEventListener("touchcancel",cleanup);
+    return()=>window.removeEventListener("touchcancel",cleanup);
+  },[]);
   const [confirming,setConfirming]=useState(null);
   const [form,setForm]=useState({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
   const [suggestions,setSuggestions]=useState([]);
@@ -1027,7 +1040,7 @@ function PlanningTab({toast}){
                   onDragLeave={()=>setDragOver(null)}
                   onDrop={()=>handleDrop(dropKey,"Dîner")}
                   data-dropzone={dropKey}
-                  style={{background:dragOver===dropKey?"#FEF3C7":today?"#EEF2FF":"#FFFFFF",border:`1px solid ${dragOver===dropKey?"#C2622D":today?"#C2622D":"#E2E8F0"}`,borderRadius:10,padding:8,minHeight:120,opacity:past?0.75:1,transition:"all 0.15s"}}>
+                  style={{background:dragOver===dropKey?"#FEF3C7":today?"#FFF7ED":"#FFFFFF",border:`1px solid ${dragOver===dropKey?"#C2622D":today?"#C2622D":"#E2E8F0"}`,borderRadius:10,padding:8,minHeight:120,opacity:past?0.75:1,transition:"all 0.15s"}}>
                   <div style={{marginBottom:6}}>
                     <div style={{fontSize:10,fontWeight:600,color:today?"#F4A57A":"#64748B",textTransform:"uppercase"}}>{DAYS[i].slice(0,3)}</div>
                     <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#F8FAFC",fontFamily:"'Playfair Display', serif"}}>{date.getDate()}</div>
