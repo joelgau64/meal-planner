@@ -868,7 +868,7 @@ function PlanningTab({toast}){
       <div style={{padding:"4px 7px",fontSize:11,fontWeight:600,background:`${MOMENT_COLORS[meal.moment]||"#64748B"}22`,color:MOMENT_COLORS[meal.moment]||"#94A3B8",lineHeight:1.3,textDecoration:meal.fait?"line-through":"none",opacity:meal.fait?0.5:1,display:"flex",alignItems:"center",gap:4}}>
         <Icon name="drag" size={8}/><span style={{flex:1}}>{meal.recette||meal.repas}</span>
       </div>
-      {!meal.fait&&<button onClick={()=>confirmCuisine(meal)} disabled={confirming===meal.id} style={{width:"100%",padding:"2px",background:"#D1FAE5",border:"none",color:"#065F46",fontSize:9,fontWeight:700,cursor:"pointer"}}>✓ Cuisiné</button>}
+      {!meal.fait&&<button onClick={()=>confirmCuisine(meal)} disabled={confirming===meal.id} style={{width:"100%",padding:"2px",background:"#F1F5F9",border:"none",color:"#94A3B8",fontSize:9,fontWeight:700,cursor:"pointer"}}>✓ Cuisiné</button>}
       {meal.fait&&<div style={{padding:"2px 7px",background:"#D1FAE5",fontSize:9,color:"#065F46",fontWeight:700}}>✓ fait</div>}
     </div>
   );
