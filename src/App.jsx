@@ -179,10 +179,120 @@ function DaysSince({date}){
 }
 
 // ── Recipe Detail Modal ───────────────────────────────────────────────────────
+// Détecte les durées dans une étape
+function detectTimer(text){
+  const t=text.toLowerCase();
+  let seconds=0;
+  const h=t.match(/(\d+)\s*h(?:eure)?/);
+  const m=t.match(/(\d+)\s*min/);
+  const s=t.match(/(\d+)\s*sec/);
+  if(h)seconds+=parseInt(h[1])*3600;
+  if(m)seconds+=parseInt(m[1])*60;
+  if(s)seconds+=parseInt(s[1]);
+  return seconds>0?seconds:null;
+}
+
+function playAlarm(){
+  try{
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    [0,0.3,0.6].forEach(t=>{
+      const o=ctx.createOscillator();const g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);
+      o.frequency.value=880;o.type="sine";
+      g.gain.setValueAtTime(0.4,ctx.currentTime+t);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+t+0.4);
+      o.start(ctx.currentTime+t);o.stop(ctx.currentTime+t+0.5);
+    });
+  }catch(e){}
+}
+
+function StepTimer({seconds,stepIdx}){
+  const [remaining,setRemaining]=useState(seconds);
+  const [running,setRunning]=useState(false);
+  const [done,setDone]=useState(false);
+  const intervalRef=useRef(null);
+  useEffect(()=>{
+    if(running&&remaining>0){
+      intervalRef.current=setInterval(()=>{
+        setRemaining(r=>{
+          if(r<=1){clearInterval(intervalRef.current);setRunning(false);setDone(true);playAlarm();return 0;}
+          return r-1;
+        });
+      },1000);
+    }
+    return()=>clearInterval(intervalRef.current);
+  },[running]);
+  const reset=()=>{setRemaining(seconds);setRunning(false);setDone(false);clearInterval(intervalRef.current);};
+  const fmt=(s)=>{const h=Math.floor(s/3600);const m=Math.floor((s%3600)/60);const sec=s%60;return h>0?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`;};
+  const pct=((seconds-remaining)/seconds)*100;
+  return(
+    <div style={{marginTop:10,padding:"10px 14px",background:done?"#D1FAE5":running?"#FEF3C7":"#F1F5F9",borderRadius:10,border:`1px solid ${done?"#6EE7B7":running?"#FCD34D":"#E2E8F0"}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>{done?"✅":running?"⏱️":"⏱"}</span>
+        <span style={{fontSize:20,fontWeight:700,fontFamily:"monospace",color:done?"#065F46":running?"#92400E":"#475569",flex:1}}>{fmt(remaining)}</span>
+        {!done&&<button onClick={()=>setRunning(r=>!r)} style={{padding:"4px 12px",background:running?"#FCD34D":"#C2622D",border:"none",borderRadius:6,color:running?"#92400E":"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>{running?"Pause":"Démarrer"}</button>}
+        <button onClick={reset} style={{padding:"4px 8px",background:"none",border:"1px solid #E2E8F0",borderRadius:6,color:"#94A3B8",fontSize:11,cursor:"pointer"}}>↺</button>
+      </div>
+      <div style={{marginTop:8,height:4,background:"#E2E8F0",borderRadius:2,overflow:"hidden"}}>
+        <div style={{height:"100%",width:pct+"%",background:done?"#34D399":running?"#F59E0B":"#C2622D",transition:"width 1s linear",borderRadius:2}}/>
+      </div>
+      {done&&<div style={{fontSize:12,color:"#065F46",fontWeight:600,marginTop:6}}>⏰ Temps écoulé !</div>}
+    </div>
+  );
+}
+
+function CookingMode({recette,onClose}){
+  const instructions=recette.instructions?recette.instructions.split(/\n|(?=\d+\.)\s*/).filter(s=>s.trim()):[];
+  const [currentStep,setCurrentStep]=useState(0);
+  const total=instructions.length;
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:2000,background:"#FFFFFF",display:"flex",flexDirection:"column"}}>
+      <div style={{padding:"16px 20px",borderBottom:"1px solid #E2E8F0",display:"flex",alignItems:"center",gap:12,background:"#FFFFFF",flexShrink:0}}>
+        <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:"#64748B",padding:4}}><Icon name="close" size={20}/></button>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11,color:"#94A3B8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Mode cuisine</div>
+          <div style={{fontSize:14,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display',serif"}}>{recette.nom}</div>
+        </div>
+        <span style={{fontSize:13,fontWeight:600,color:"#C2622D"}}>{currentStep+1} / {total}</span>
+      </div>
+      <div style={{height:3,background:"#F1F5F9",flexShrink:0}}>
+        <div style={{height:"100%",width:`${(currentStep/(total-1||1))*100}%`,background:"#C2622D",transition:"width 0.3s"}}/>
+      </div>
+      {recette.photo&&currentStep===0&&<img src={recette.photo} alt={recette.nom} style={{width:"100%",height:160,objectFit:"cover",flexShrink:0}} onError={e=>e.target.style.display="none"}/>}
+      <div style={{flex:1,overflow:"auto",padding:"24px 20px"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#C2622D",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Étape {currentStep+1}</div>
+        <p style={{fontSize:17,color:"#0F172A",lineHeight:1.7,margin:0,fontWeight:500}}>{instructions[currentStep]?.replace(/^\d+\.\s*/,"")}</p>
+        {detectTimer(instructions[currentStep]||"")&&<StepTimer key={currentStep} seconds={detectTimer(instructions[currentStep])} stepIdx={currentStep}/>}
+        {currentStep<total-1&&(
+          <div style={{marginTop:24,padding:"12px 14px",background:"#F8FAFC",borderRadius:10,border:"1px solid #F1F5F9"}}>
+            <div style={{fontSize:11,color:"#94A3B8",fontWeight:600,marginBottom:4}}>Étape suivante</div>
+            <p style={{fontSize:13,color:"#94A3B8",margin:0,lineHeight:1.5}}>{instructions[currentStep+1]?.replace(/^\d+\.\s*/,"").substring(0,120)}{instructions[currentStep+1]?.length>120?"…":""}</p>
+          </div>
+        )}
+        {currentStep===total-1&&(
+          <div style={{marginTop:24,padding:"20px",background:"#F0FDF4",borderRadius:12,textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:8}}>🎉</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#065F46"}}>Recette terminée !</div>
+          </div>
+        )}
+      </div>
+      <div style={{padding:"16px 20px",borderTop:"1px solid #E2E8F0",display:"flex",gap:12,background:"#FFFFFF",flexShrink:0}}>
+        <button onClick={()=>setCurrentStep(s=>Math.max(0,s-1))} disabled={currentStep===0}
+          style={{flex:1,padding:"12px",background:"#F1F5F9",border:"none",borderRadius:10,color:currentStep===0?"#CBD5E1":"#475569",fontWeight:600,fontSize:14,cursor:currentStep===0?"not-allowed":"pointer"}}>← Précédent</button>
+        {currentStep<total-1
+          ?<button onClick={()=>setCurrentStep(s=>s+1)} style={{flex:2,padding:"12px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>Étape suivante →</button>
+          :<button onClick={onClose} style={{flex:2,padding:"12px",background:"#065F46",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>✓ Terminer</button>
+        }
+      </div>
+    </div>
+  );
+}
+
 function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning}){
   const basePortion=recette.portions||DEFAULT_PORTIONS;
   const [portions,setPortions]=useState(basePortion);
-  const [selectedIngredients,setSelectedIngredients]=useState(null); // null = not in ingredient select mode
+  const [selectedIngredients,setSelectedIngredients]=useState(null);
+  const [cookingMode,setCookingMode]=useState(false); // null = not in ingredient select mode
   const score=(recette.likes||0)-(recette.dislikes||0);
 
   const parsedIngredients=parseIngredients(recette.ingredients);
@@ -196,6 +306,8 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
     const selected=scaled.map((ing,i)=>({...ing,selected:true,idx:i}));
     setSelectedIngredients(selected);
   };
+
+  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)}/>;
 
   if(selectedIngredients){
     return(
@@ -259,7 +371,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
             {scaled.map((ing,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #E2E8F0"}}>
-                <span style={{fontSize:13,color:"#CBD5E1"}}>{ing.name}</span>
+                <span style={{fontSize:13,color:"#0F172A"}}>{ing.name}</span>
                 <span style={{fontSize:13,color:"#64748B",marginLeft:8,whiteSpace:"nowrap"}}>{ing.scalable?(ing.displayQty||ing.qty):""} {ing.unit}</span>
               </div>
             ))}
@@ -273,7 +385,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
             {instructions.map((step,i)=>(
               <div key={i} style={{display:"flex",gap:10}}>
                 <span style={{fontSize:11,fontWeight:700,color:"#C2622D",minWidth:20,marginTop:2}}>{i+1}.</span>
-                <span style={{fontSize:13,color:"#CBD5E1",lineHeight:1.6}}>{step.replace(/^\d+\.\s*/,"")}</span>
+                <span style={{fontSize:13,color:"#475569",lineHeight:1.6}}>{step.replace(/^\d+\.\s*/,"")}</span>
               </div>
             ))}
           </div>
@@ -282,6 +394,9 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
 
       {/* Actions */}
       <div style={{display:"flex",gap:8,marginTop:24,borderTop:"1px solid #E2E8F0",paddingTop:16,flexWrap:"wrap"}}>
+        <button onClick={()=>setCookingMode(true)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:13}}>
+          🍳 Cuisiner
+        </button>
         <button onClick={handleAddToCourses} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer",fontWeight:600,fontSize:13}}>
           <Icon name="cart" size={15}/> Courses
         </button>
