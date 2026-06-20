@@ -6,7 +6,7 @@ const DB_COURSES = "35f5b3b5-095f-4998-a014-9a112807e711";
 
 const DAYS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner","Snack"];
-const MOMENT_COLORS = {"Petit-déjeuner":"#F59E0B","Déjeuner":"#3B82F6","Dîner":"#8B5CF6","Snack":"#10B981"};
+const MOMENT_COLORS = {"Déjeuner":"#3B82F6","Dîner":"#8B5CF6"};
 const CAT_COLORS = {"Fruits & Légumes":"#16A34A","Viandes & Poissons":"#DC2626","Produits laitiers":"#2563EB","Épicerie":"#EA580C","Surgelés":"#7C3AED","Boissons":"#0891B2","Autre":"#6B7280"};
 const EMPTY_FORM = {nom:"",categorie:"Dîner",temps:"",portions:4,ingredients:"",instructions:"",tags:[],note:"***",photoUrl:"",sourceUrl:""};
 const DEFAULT_PORTIONS = 4;
@@ -301,9 +301,6 @@ function AddToPlanningModal({recette,portions,mode,onClose,toast}){
   const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const [moment,setMoment]=useState("Dîner");
   const [saving,setSaving]=useState(false);
-  const [showCoursesModal,setShowCoursesModal]=useState(false);
-  const [coursesSelection,setCoursesSelection]=useState([]);
-  const [generatingCourses,setGeneratingCourses]=useState(false);
 
   const save=async()=>{
     setSaving(true);
@@ -401,9 +398,6 @@ function AddRecipeModal({onClose,onSaved}){
   const [method,setMethod]=useState(null);
   const [form,setForm]=useState({...EMPTY_FORM});
   const [saving,setSaving]=useState(false);
-  const [showCoursesModal,setShowCoursesModal]=useState(false);
-  const [coursesSelection,setCoursesSelection]=useState([]);
-  const [generatingCourses,setGeneratingCourses]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
   const [photoPreview,setPhotoPreview]=useState(null);
   const [url,setUrl]=useState("");
@@ -583,7 +577,8 @@ function RecettesTab({toast}){
 }
 
 // ── Planning Tab ──────────────────────────────────────────────────────────────
-function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,groupMode,setGroupMode,generatingCourses,setGeneratingCourses,setShowCoursesModal,toast}){
+function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,groupMode,setGroupMode,toast}){
+  const [generatingCourses,setGeneratingCourses]=useState(false);
   const btnSmall={padding:"3px 10px",fontSize:11,fontWeight:600,border:"1px solid #E2E8F0",borderRadius:6,background:"#FFFFFF",color:"#475569",cursor:"pointer"};
 
   const semaine=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
@@ -752,7 +747,6 @@ function PlanningTab({toast}){
   const [saving,setSaving]=useState(false);
   const [showCoursesModal,setShowCoursesModal]=useState(false);
   const [coursesSelection,setCoursesSelection]=useState([]);
-  const [generatingCourses,setGeneratingCourses]=useState(false);
   const [groupMode,setGroupMode]=useState("recette");
   const [selectedMealRecette,setSelectedMealRecette]=useState(null);
 
@@ -1007,9 +1001,6 @@ function PlanningTab({toast}){
         recettes={recettes}
         groupMode={groupMode}
         setGroupMode={setGroupMode}
-        generatingCourses={generatingCourses}
-        setGeneratingCourses={setGeneratingCourses}
-        setShowCoursesModal={setShowCoursesModal}
         toast={toast}
       />}
 
