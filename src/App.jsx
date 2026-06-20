@@ -745,6 +745,7 @@ function PlanningTab({toast}){
   const [weekOffset,setWeekOffset]=useState(0);
   const [dragItem,setDragItem]=useState(null);
   const [dragOver,setDragOver]=useState(null);
+  const touchDragRef=useRef(null); // {item, ghost, startX, startY}
   const [confirming,setConfirming]=useState(null);
   const [form,setForm]=useState({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
   const [suggestions,setSuggestions]=useState([]);
@@ -824,7 +825,46 @@ function PlanningTab({toast}){
 
   const MealChip=({meal})=>(
     <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
-      style={{borderRadius:6,overflow:"hidden",marginBottom:4,opacity:dragItem?.id===meal.id?0.4:1,cursor:"grab"}}>
+      onTouchStart={(e)=>{
+        const touch=e.touches[0];
+        const ghost=e.currentTarget.cloneNode(true);
+        ghost.style.cssText=`position:fixed;top:${touch.clientY-30}px;left:${touch.clientX-80}px;width:160px;opacity:0.85;z-index:9999;pointer-events:none;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.2);`;
+        document.body.appendChild(ghost);
+        touchDragRef.current={item:meal,ghost,startX:touch.clientX,startY:touch.clientY};
+        setDragItem(meal);
+      }}
+      onTouchMove={(e)=>{
+        if(!touchDragRef.current)return;
+        e.preventDefault();
+        const touch=e.touches[0];
+        touchDragRef.current.ghost.style.top=touch.clientY-30+"px";
+        touchDragRef.current.ghost.style.left=touch.clientX-80+"px";
+        // Détecter la drop zone sous le doigt
+        const el=document.elementFromPoint(touch.clientX,touch.clientY);
+        const zone=el?.closest("[data-dropzone]");
+        setDragOver(zone?.dataset.dropzone||null);
+      }}
+      onTouchEnd={(e)=>{
+        if(!touchDragRef.current)return;
+        const touch=e.changedTouches[0];
+        const el=document.elementFromPoint(touch.clientX,touch.clientY);
+        const zone=el?.closest("[data-dropzone]");
+        if(zone){
+          const key=zone.dataset.dropzone;
+          if(key==="queue"){
+            const updated=planning.map(p=>p.id===dragItem.id?{...p,queue:true}:p);
+            setPlanning(updated);
+            notionUpdate(dragItem.id,{"File d'attente":nCheck(true)});
+            toast(`"${dragItem.recette}" remis en file d'attente ✓`);
+          } else {
+            handleDrop(key,"Dîner");
+          }
+        }
+        touchDragRef.current.ghost.remove();
+        touchDragRef.current=null;
+        setDragItem(null);setDragOver(null);
+      }}
+      style={{borderRadius:6,overflow:"hidden",marginBottom:4,opacity:dragItem?.id===meal.id?0.4:1,cursor:"grab",touchAction:"none"}}>
       <div style={{padding:"4px 7px",fontSize:11,fontWeight:600,background:`${MOMENT_COLORS[meal.moment]||"#64748B"}22`,color:MOMENT_COLORS[meal.moment]||"#94A3B8",lineHeight:1.3,textDecoration:meal.fait?"line-through":"none",opacity:meal.fait?0.5:1,display:"flex",alignItems:"center",gap:4}}>
         <Icon name="drag" size={8}/><span style={{flex:1}}>{meal.recette||meal.repas}</span>
       </div>
@@ -873,6 +913,7 @@ function PlanningTab({toast}){
                   onDragOver={e=>{e.preventDefault();setDragOver(dropKey);}}
                   onDragLeave={()=>setDragOver(null)}
                   onDrop={()=>handleDrop(dropKey,"Dîner")}
+                  data-dropzone={dropKey}
                   style={{background:dragOver===dropKey?"#FEF3C7":today?"#EEF2FF":"#FFFFFF",border:`1px solid ${dragOver===dropKey?"#C2622D":today?"#C2622D":"#E2E8F0"}`,borderRadius:10,padding:8,minHeight:120,opacity:past?0.75:1,transition:"all 0.15s"}}>
                   <div style={{marginBottom:6}}>
                     <div style={{fontSize:10,fontWeight:600,color:today?"#F4A57A":"#64748B",textTransform:"uppercase"}}>{DAYS[i].slice(0,3)}</div>
@@ -889,6 +930,7 @@ function PlanningTab({toast}){
           <div style={{background:"#F1F5F9",border:"1px solid #E2E8F0",borderRadius:12,padding:16}}
             onDragOver={e=>{e.preventDefault();setDragOver("queue");}}
             onDragLeave={()=>setDragOver(null)}
+            data-dropzone="queue"
             onDrop={async()=>{
               if(!dragItem)return;
               const updated=planning.map(p=>p.id===dragItem.id?{...p,queue:true}:p);
@@ -905,7 +947,37 @@ function PlanningTab({toast}){
             <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
               {queueItems.map((m,i)=>(
                 <div key={i} draggable onDragStart={()=>setDragItem(m)} onDragEnd={()=>setDragItem(null)}
-                  style={{padding:"6px 12px",background:`${MOMENT_COLORS[m.moment]||"#64748B"}22`,border:`1px solid ${MOMENT_COLORS[m.moment]||"#64748B"}44`,borderRadius:20,fontSize:12,fontWeight:600,color:MOMENT_COLORS[m.moment]||"#94A3B8",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1}}>
+                  onTouchStart={(e)=>{
+                    const touch=e.touches[0];
+                    const ghost=e.currentTarget.cloneNode(true);
+                    ghost.style.cssText=`position:fixed;top:${touch.clientY-20}px;left:${touch.clientX-60}px;opacity:0.85;z-index:9999;pointer-events:none;border-radius:20px;padding:6px 12px;`;
+                    document.body.appendChild(ghost);
+                    touchDragRef.current={item:m,ghost};
+                    setDragItem(m);
+                  }}
+                  onTouchMove={(e)=>{
+                    if(!touchDragRef.current)return;
+                    e.preventDefault();
+                    const touch=e.touches[0];
+                    touchDragRef.current.ghost.style.top=touch.clientY-20+"px";
+                    touchDragRef.current.ghost.style.left=touch.clientX-60+"px";
+                    const el=document.elementFromPoint(touch.clientX,touch.clientY);
+                    const zone=el?.closest("[data-dropzone]");
+                    setDragOver(zone?.dataset.dropzone||null);
+                  }}
+                  onTouchEnd={(e)=>{
+                    if(!touchDragRef.current)return;
+                    const touch=e.changedTouches[0];
+                    const el=document.elementFromPoint(touch.clientX,touch.clientY);
+                    const zone=el?.closest("[data-dropzone]");
+                    if(zone&&zone.dataset.dropzone!=="queue"){
+                      handleDrop(zone.dataset.dropzone,"Dîner");
+                    }
+                    touchDragRef.current.ghost.remove();
+                    touchDragRef.current=null;
+                    setDragItem(null);setDragOver(null);
+                  }}
+                  style={{padding:"6px 12px",background:`${MOMENT_COLORS[m.moment]||"#64748B"}22`,border:`1px solid ${MOMENT_COLORS[m.moment]||"#64748B"}44`,borderRadius:20,fontSize:12,fontWeight:600,color:MOMENT_COLORS[m.moment]||"#94A3B8",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,touchAction:"none"}}>
                   <Icon name="drag" size={10}/>{m.recette||m.repas}
                 </div>
               ))}
