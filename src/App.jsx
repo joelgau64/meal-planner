@@ -760,62 +760,142 @@ function PlanningTab({toast}){
         </div>
       )}
 
-      {showCoursesModal&&(
-        <Modal title="🛒 Générer la liste de courses" onClose={()=>setShowCoursesModal(false)}>
-          <p style={{fontSize:13,color:"#64748B",marginBottom:16}}>File d'attente + repas planifiés sur les 2 prochaines semaines. Décoche ce que tu as déjà.</p>
-          {coursesSelection.length===0&&<p style={{fontSize:13,color:"#64748B",textAlign:"center",padding:"16px 0"}}>Aucune recette en file d'attente ou planifiée cette semaine.</p>}
-          <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
-            {coursesSelection.map((m,i)=>(
-              <div key={i} onClick={()=>setCoursesSelection(s=>s.map((x,j)=>j===i?{...x,selected:!x.selected}:x))}
-                style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:m.selected?"#1E293B":"#0F172A",border:`1px solid ${m.selected?"#C2622D":"#1E293B"}`,borderRadius:8,cursor:"pointer"}}>
-                <div style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${m.selected?"#C2622D":"#334155"}`,background:m.selected?"#C2622D":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                  {m.selected&&<Icon name="check" size={12}/>}
+      {showCoursesModal&&(()=>{
+        // Construire la liste aplatie d'ingrédients depuis les recettes sélectionnées
+        const buildIngredients=(selection)=>{
+          const list=[];
+          const semaine=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
+          for(const meal of selection){
+            const recetteNom=meal.recette||meal.repas;
+            const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===recetteNom);
+            if(!recetteData?.ingredients)continue;
+            const lines=recetteData.ingredients.split("\n").filter(l=>l.trim());
+            for(const line of lines){
+              const trimmed=line.replace(/^[-•*\d.]+\s*/,"").trim();
+              if(!trimmed)continue;
+              const parts=trimmed.match(/^([\d,./]+\s*(?:g|kg|ml|L|cl|càs|càc|cup|oz)?)?\s*(.+)/i);
+              const qty=parts?.[1]?.trim()||"";
+              const nom=parts?.[2]?.trim()||trimmed;
+              list.push({nom,qty,recette:recetteNom,categorie:guessCategory(nom),selected:true,semaine:`Sem. du ${semaine}`});
+            }
+          }
+          return list;
+        };
+
+        const selRecettes=coursesSelection.filter(m=>m.selected);
+        const allIngs=buildIngredients(selRecettes);
+
+        // Grouper selon le mode
+        const grouped={};
+        allIngs.forEach((ing,idx)=>{
+          const key=groupMode==="recette"?ing.recette:ing.categorie;
+          if(!grouped[key])grouped[key]=[];
+          grouped[key].push({...ing,_idx:idx});
+        });
+        const groups=Object.entries(grouped);
+        const totalIngs=allIngs.length;
+        const allSelected=allIngs.every(i=>i.selected);
+
+        const btnSmall={padding:"3px 10px",fontSize:11,fontWeight:600,border:"1px solid #E2E8F0",borderRadius:6,background:"#FFFFFF",color:"#475569",cursor:"pointer"};
+
+        return(
+        <Modal title="🛒 Générer la liste de courses" onClose={()=>setShowCoursesModal(false)} wide>
+          {/* Subtitle */}
+          <p style={{fontSize:13,color:"#64748B",marginBottom:16}}>File d'attente + repas planifiés sur 2 semaines. Décoche ce que tu as déjà.</p>
+
+          {/* Toggle mode */}
+          <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:12,color:"#64748B",marginRight:4}}>Regrouper par :</span>
+            <button onClick={()=>setGroupMode("recette")} style={{...btnSmall,background:groupMode==="recette"?"#C2622D":"#FFFFFF",color:groupMode==="recette"?"#fff":"#475569",borderColor:groupMode==="recette"?"#C2622D":"#E2E8F0"}}>🍽️ Recette</button>
+            <button onClick={()=>setGroupMode("categorie")} style={{...btnSmall,background:groupMode==="categorie"?"#C2622D":"#FFFFFF",color:groupMode==="categorie"?"#fff":"#475569",borderColor:groupMode==="categorie"?"#C2622D":"#E2E8F0"}}>🏪 Catégorie</button>
+            <div style={{marginLeft:"auto",display:"flex",gap:6}}>
+              <button style={btnSmall} onClick={()=>setCoursesSelection(s=>s.map(x=>({...x,selected:true})))}>Tout cocher</button>
+              <button style={btnSmall} onClick={()=>setCoursesSelection(s=>s.map(x=>({...x,selected:false})))}>Tout décocher</button>
+            </div>
+          </div>
+
+          {/* Sélection recettes */}
+          <div style={{background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:12,marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>Recettes incluses</span>
+              <div style={{display:"flex",gap:6}}>
+                <button style={btnSmall} onClick={()=>setCoursesSelection(s=>s.map(x=>({...x,selected:true})))}>Tout cocher</button>
+                <button style={btnSmall} onClick={()=>setCoursesSelection(s=>s.map(x=>({...x,selected:false})))}>Tout décocher</button>
+              </div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {coursesSelection.map((m,i)=>(
+                <div key={i} onClick={()=>setCoursesSelection(s=>s.map((x,j)=>j===i?{...x,selected:!x.selected}:x))}
+                  style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:20,border:`1px solid ${m.selected?"#C2622D":"#E2E8F0"}`,background:m.selected?"rgba(194,98,45,0.08)":"#FFFFFF",cursor:"pointer",fontSize:12,fontWeight:500,color:m.selected?"#C2622D":"#64748B"}}>
+                  {m.selected&&<Icon name="check" size={10}/>}{m.recette||m.repas}
                 </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:13,fontWeight:600,color:"#0F172A"}}>{m.recette||m.repas}</div>
-                  <div style={{fontSize:11,color:"#64748B"}}>{m.queue?"File d'attente":m.date} · {m.portions||4} personnes</div>
+              ))}
+            </div>
+          </div>
+
+          {/* Liste ingrédients groupée */}
+          {coursesSelection.length===0&&<p style={{fontSize:13,color:"#64748B",textAlign:"center",padding:"16px 0"}}>Aucune recette sélectionnée.</p>}
+          {groups.map(([groupKey,items])=>{
+            const allGroupSel=items.every(ing=>allIngs[ing._idx]?.selected!==false);
+            return(
+            <div key={groupKey} style={{marginBottom:12,background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:10,overflow:"hidden"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 14px",background:"#F8FAFC",borderBottom:"1px solid #E2E8F0"}}>
+                <span style={{fontSize:12,fontWeight:700,color:"#0F172A"}}>{groupKey}</span>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <span style={{fontSize:11,color:"#94A3B8"}}>{items.length} articles</span>
+                  <button style={btnSmall} onClick={()=>{
+                    const idxs=new Set(items.map(i=>i._idx));
+                    setIngredients(prev=>prev.map((x,i)=>idxs.has(i)?{...x,selected:true}:x));
+                  }}>Tout cocher</button>
+                  <button style={btnSmall} onClick={()=>{
+                    const idxs=new Set(items.map(i=>i._idx));
+                    setIngredients(prev=>prev.map((x,i)=>idxs.has(i)?{...x,selected:false}:x));
+                  }}>Tout décocher</button>
                 </div>
               </div>
-            ))}
-          </div>
-          <button disabled={generatingCourses||coursesSelection.filter(m=>m.selected).length===0}
+              {items.map((ing,j)=>(
+                <div key={j} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",borderBottom:j<items.length-1?"1px solid #F1F5F9":"none",cursor:"pointer"}}
+                  onClick={()=>{/* toggle individuel via allIngs */}}>
+                  <div style={{width:16,height:16,borderRadius:3,border:"1.5px solid #CBD5E1",background:"#FFFFFF",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <Icon name="check" size={10}/>
+                  </div>
+                  <span style={{flex:1,fontSize:13,color:"#0F172A"}}>{ing.nom}</span>
+                  {ing.qty&&<span style={{fontSize:12,color:"#94A3B8"}}>{ing.qty}</span>}
+                  {groupMode==="categorie"&&<span style={{fontSize:11,color:"#CBD5E1",fontStyle:"italic"}}>{ing.recette}</span>}
+                </div>
+              ))}
+            </div>
+            );
+          })}
+
+          <button disabled={generatingCourses||selRecettes.length===0}
             onClick={async()=>{
               setGeneratingCourses(true);
-              const selected=coursesSelection.filter(m=>m.selected);
               let totalAdded=0;
-              const semaine=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
-              for(const meal of selected){
-                const recetteNom=meal.recette||meal.repas;
-                const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===recetteNom);
-                if(!recetteData?.ingredients){continue;}
-                const lines=recetteData.ingredients.split("\n").filter(l=>l.trim());
-                for(const line of lines){
-                  const trimmed=line.replace(/^[-•*\d.]+\s*/,"").trim();
-                  if(!trimmed)continue;
-                  const parts=trimmed.match(/^([\d,./]+\s*(?:g|kg|ml|L|cl|càs|càc|cup|oz)?)?\s*(.+)/i);
-                  const qty=parts?.[1]?.trim()||"";
-                  const nom=parts?.[2]?.trim()||trimmed;
+              for(const ing of allIngs){
+                try{
                   await notionCreate(DB_COURSES,{
-                    "Article":nTitle(nom),
-                    "Catégorie":nSel(guessCategory(nom)),
-                    "Quantité":nText(qty),
+                    "Article":nTitle(ing.nom),
+                    "Catégorie":nSel(ing.categorie),
+                    "Quantité":nText(ing.qty),
                     "Acheté":nCheck(false),
-                    "Semaine":nText(`Sem. du ${semaine}`),
-                    "Recette":nText(recetteNom),
+                    "Semaine":nText(ing.semaine),
+                    "Recette":nText(ing.recette),
                   });
                   totalAdded++;
-                }
+                }catch(e){console.error(e);}
               }
               setGeneratingCourses(false);
               setShowCoursesModal(false);
               toast(`${totalAdded} articles ajoutés à la liste de courses ✓`);
               setCache("courses",null);
             }}
-            style={coursesSelection.filter(m=>m.selected).length>0&&!generatingCourses?btnPrimary:btnDisabled}>
-            {generatingCourses?"Génération en cours...":"Générer pour "+coursesSelection.filter(m=>m.selected).length+" recette(s)"}
+            style={selRecettes.length>0&&!generatingCourses?{...btnPrimary,marginTop:4}:{...btnDisabled,marginTop:4}}>
+            {generatingCourses?"Génération en cours...":"Générer "+totalIngs+" articles pour "+selRecettes.length+" recette(s)"}
           </button>
         </Modal>
-      )}
+        );
+      })()}
 
       {showForm&&(
         <Modal title="Ajouter au planning" onClose={()=>setShowForm(false)}>
