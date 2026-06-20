@@ -690,7 +690,12 @@ function PlanningTab({toast}){
         <div style={{display:"flex",gap:8}}>
           <button onClick={()=>load(true)} style={{padding:"8px 10px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer"}}><Icon name="refresh" size={14}/></button>
           <button onClick={()=>{
-            const meals=[...queueItems,...planning.filter(p=>!p.queue&&weekDates.some(d=>d.toISOString().split("T")[0]===p.date))];
+            const today=new Date();today.setHours(0,0,0,0);
+            const twoWeeksLater=new Date(today);twoWeeksLater.setDate(today.getDate()+14);
+            const todayStr=today.toISOString().split("T")[0];
+            const limitStr=twoWeeksLater.toISOString().split("T")[0];
+            const planned=planning.filter(p=>!p.queue&&p.date&&p.date>=todayStr&&p.date<=limitStr);
+            const meals=[...queueItems,...planned];
             const unique=[];const seen=new Set();
             meals.forEach(m=>{const k=m.recette||m.repas;if(k&&!seen.has(k)){seen.add(k);unique.push(m);}});
             setCoursesSelection(unique.map(m=>({...m,selected:true})));
@@ -757,7 +762,7 @@ function PlanningTab({toast}){
 
       {showCoursesModal&&(
         <Modal title="🛒 Générer la liste de courses" onClose={()=>setShowCoursesModal(false)}>
-          <p style={{fontSize:13,color:"#64748B",marginBottom:16}}>Sélectionne les recettes à inclure dans ta liste de courses :</p>
+          <p style={{fontSize:13,color:"#64748B",marginBottom:16}}>File d'attente + repas planifiés sur les 2 prochaines semaines. Décoche ce que tu as déjà.</p>
           {coursesSelection.length===0&&<p style={{fontSize:13,color:"#64748B",textAlign:"center",padding:"16px 0"}}>Aucune recette en file d'attente ou planifiée cette semaine.</p>}
           <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
             {coursesSelection.map((m,i)=>(
