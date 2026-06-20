@@ -753,6 +753,8 @@ function PlanningTab({toast}){
   const [showCoursesModal,setShowCoursesModal]=useState(false);
   const [coursesSelection,setCoursesSelection]=useState([]);
   const [generatingCourses,setGeneratingCourses]=useState(false);
+  const [groupMode,setGroupMode]=useState("recette");
+  const [selectedMealRecette,setSelectedMealRecette]=useState(null);
 
   const getWeekDates=(offset=0)=>{
     const now=new Date();const day=now.getDay();
@@ -823,7 +825,8 @@ function PlanningTab({toast}){
   const queueItems=planning.filter(p=>p.queue);
   const weekLabel=()=>({0:"Cette semaine",1:"Semaine prochaine","-1":"Semaine dernière"}[weekOffset]||`Sem. ${weekOffset>0?"+":""}${weekOffset}`);
 
-  const MealChip=({meal})=>(
+  const MealChip=({meal,onViewRecette})=>(
+
     <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
       onTouchStart={(e)=>{
         const touch=e.touches[0];
@@ -866,7 +869,8 @@ function PlanningTab({toast}){
       }}
       style={{borderRadius:6,overflow:"hidden",marginBottom:4,opacity:dragItem?.id===meal.id?0.4:1,cursor:"grab",touchAction:"none"}}>
       <div style={{padding:"4px 7px",fontSize:11,fontWeight:600,background:`${MOMENT_COLORS[meal.moment]||"#64748B"}22`,color:MOMENT_COLORS[meal.moment]||"#94A3B8",lineHeight:1.3,textDecoration:meal.fait?"line-through":"none",opacity:meal.fait?0.5:1,display:"flex",alignItems:"center",gap:4}}>
-        <Icon name="drag" size={8}/><span style={{flex:1}}>{meal.recette||meal.repas}</span>
+        <Icon name="drag" size={8}/>
+        <span style={{flex:1,cursor:"pointer"}} onClick={(e)=>{e.stopPropagation();onViewRecette&&onViewRecette(meal);}}>{meal.recette||meal.repas}</span>
       </div>
       {!meal.fait&&<button onClick={()=>confirmCuisine(meal)} disabled={confirming===meal.id} style={{width:"100%",padding:"2px",background:"#F1F5F9",border:"none",color:"#94A3B8",fontSize:9,fontWeight:700,cursor:"pointer"}}>✓ Cuisiné</button>}
       {meal.fait&&<div style={{padding:"2px 7px",background:"#D1FAE5",fontSize:9,color:"#065F46",fontWeight:700}}>✓ fait</div>}
@@ -920,7 +924,7 @@ function PlanningTab({toast}){
                     <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#F8FAFC",fontFamily:"'Playfair Display', serif"}}>{date.getDate()}</div>
                   </div>
                   {meals.length===0&&<div style={{fontSize:10,color:"#94A3B8",textAlign:"center",paddingTop:8}}>—</div>}
-                  {meals.map((m,j)=><MealChip key={j} meal={m}/>)}
+                  {meals.map((m,j)=><MealChip key={j} meal={m} onViewRecette={(meal)=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r)setSelectedMealRecette(r);}}/>)}
                 </div>
               );
             })}
@@ -984,6 +988,16 @@ function PlanningTab({toast}){
             </div>
           </div>
         </div>
+      )}
+
+      {selectedMealRecette&&(
+        <RecipeDetailModal
+          recette={selectedMealRecette}
+          onClose={()=>setSelectedMealRecette(null)}
+          toast={toast}
+          onAddToCourses={()=>{}}
+          onAddToPlanning={()=>{}}
+        />
       )}
 
       {showCoursesModal&&<CoursesModal
