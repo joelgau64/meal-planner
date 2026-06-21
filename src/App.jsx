@@ -595,6 +595,7 @@ function RecettesTab({toast}){
   const [filter,setFilter]=useState("Toutes");
   const [sortBy,setSortBy]=useState("score");
   const [voting,setVoting]=useState(null);
+  const [searchQuery,setSearchQuery]=useState("");
 
   const load=useCallback(async(force=false)=>{
     const cached=getCached("recettes");
@@ -619,7 +620,8 @@ function RecettesTab({toast}){
 
   const score=r=>(r.likes||0)-(r.dislikes||0);
   const cats=["Toutes","Déjeuner","Dîner","Dessert","Sauce & Marinade"];
-  const sorted=[...recettes].filter(r=>filter==="Toutes"||r.categorie===filter).sort((a,b)=>{
+  const q=searchQuery.toLowerCase().trim();
+  const sorted=[...recettes].filter(r=>(filter==="Toutes"||r.categorie===filter)&&(!q||r.nom?.toLowerCase().includes(q)||r.ingredients?.toLowerCase().includes(q))).sort((a,b)=>{
     if(sortBy==="score")return score(b)-score(a);
     if(sortBy==="cuisinee")return(b.fois_cuisinee||0)-(a.fois_cuisinee||0);
     if(sortBy==="recent"){if(!a.derniere_cuisson)return 1;if(!b.derniere_cuisson)return -1;return new Date(a.derniere_cuisson)-new Date(b.derniere_cuisson);}
@@ -628,6 +630,19 @@ function RecettesTab({toast}){
 
   return(
     <div>
+      {/* Barre de recherche */}
+      <div style={{marginBottom:12}}>
+        <div style={{position:"relative"}}>
+          <input
+            value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
+            placeholder="Rechercher une recette ou un ingrédient..."
+            style={{width:"100%",padding:"10px 14px 10px 36px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:10,fontSize:13,color:"#0F172A",outline:"none",fontFamily:"inherit"}}
+          />
+          <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"#94A3B8",fontSize:14}}>🔍</span>
+          {searchQuery&&<button onClick={()=>setSearchQuery("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#94A3B8",cursor:"pointer",fontSize:16,lineHeight:1}}>✕</button>}
+        </div>
+      </div>
+
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,gap:12,flexWrap:"wrap"}}>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {cats.map(c=>(<button key={c} onClick={()=>setFilter(c)} style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:600,cursor:"pointer",border:"1px solid",borderColor:filter===c?"#C2622D":"#1E293B",background:filter===c?"#C2622D":"transparent",color:filter===c?"#fff":"#94A3B8"}}>{c}</button>))}
@@ -947,7 +962,7 @@ function PlanningTab({toast}){
   const queueItems=planning.filter(p=>p.queue);
   const weekLabel=()=>({0:"Cette semaine",1:"Semaine prochaine","-1":"Semaine dernière"}[weekOffset]||`Sem. ${weekOffset>0?"+":""}${weekOffset}`);
 
-  const MealChip=({meal,onViewRecette})=>(
+  const MealChip=({meal,onViewRecette,onMoveToQueue})=>(
 
     <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
       onTouchStart={(e)=>{
@@ -994,8 +1009,11 @@ function PlanningTab({toast}){
         <Icon name="drag" size={8}/>
         <span style={{flex:1,cursor:"pointer"}} onClick={(e)=>{e.stopPropagation();onViewRecette&&onViewRecette(meal);}}>{meal.recette||meal.repas}</span>
       </div>
-      {!meal.fait&&<button onClick={()=>confirmCuisine(meal)} disabled={confirming===meal.id} style={{width:"100%",padding:"2px",background:"#F1F5F9",border:"none",color:"#94A3B8",fontSize:9,fontWeight:700,cursor:"pointer"}}>✓ Cuisiné</button>}
-      {meal.fait&&<div style={{padding:"2px 7px",background:"#D1FAE5",fontSize:9,color:"#065F46",fontWeight:700}}>✓ fait</div>}
+      <div style={{display:"flex",gap:2}}>
+        <button onClick={(e)=>{e.stopPropagation();const updated=setPlanning?setPlanning:null;/* handled via prop */onMoveToQueue&&onMoveToQueue(meal);}} style={{flex:1,padding:"2px",background:"#F1F5F9",border:"none",color:"#94A3B8",fontSize:9,fontWeight:600,cursor:"pointer"}}>↩ File</button>
+        {!meal.fait&&<button onClick={()=>confirmCuisine(meal)} disabled={confirming===meal.id} style={{flex:1,padding:"2px",background:"#F1F5F9",border:"none",color:"#94A3B8",fontSize:9,fontWeight:700,cursor:"pointer"}}>✓ Cuisiné</button>}
+        {meal.fait&&<div style={{flex:1,padding:"2px 7px",background:"#D1FAE5",fontSize:9,color:"#065F46",fontWeight:700,textAlign:"center"}}>✓ fait</div>}
+      </div>
     </div>
   );
 
@@ -1046,7 +1064,15 @@ function PlanningTab({toast}){
                     <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#F8FAFC",fontFamily:"'Playfair Display', serif"}}>{date.getDate()}</div>
                   </div>
                   {meals.length===0&&<div style={{fontSize:10,color:"#94A3B8",textAlign:"center",paddingTop:8}}>—</div>}
-                  {meals.map((m,j)=><MealChip key={j} meal={m} onViewRecette={(meal)=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r)setSelectedMealRecette(r);}}/>)}
+                  {meals.map((m,j)=><MealChip key={j} meal={m}
+  onViewRecette={(meal)=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r)setSelectedMealRecette(r);}}
+  onMoveToQueue={(meal)=>{
+    const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
+    setPlanning(updated);
+    notionUpdate(meal.id,{"File d'attente":nCheck(true),"Date":nDate(null)});
+    toast(`"${meal.recette||meal.repas}" remis en file d'attente ✓`);
+  }}
+/>)}
                 </div>
               );
             })}
