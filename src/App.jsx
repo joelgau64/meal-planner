@@ -35,6 +35,16 @@ async function notionQuery(dbId,filter,sorts){
   return {results:all};
 }
 async function notionCreate(dbId,properties){
+  // Déduplication : vérifier si un enregistrement avec le même titre existe déjà
+  const titleProp=Object.values(properties).find(p=>p.title);
+  const titleValue=titleProp?.title?.[0]?.text?.content;
+  if(titleValue&&dbId===DB_RECETTES){
+    const existing=await notionQuery(dbId,{property:"Nom",title:{equals:titleValue}});
+    if(existing.results?.length>0){
+      console.warn("[notionCreate] Doublon détecté, skip:", titleValue);
+      return {object:"skip",existing:existing.results[0]};
+    }
+  }
   const res=await fetch(`/api/notion?path=/v1/pages`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({parent:{database_id:dbId},properties})});
   return res.json();
 }
