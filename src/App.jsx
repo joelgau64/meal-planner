@@ -1371,31 +1371,27 @@ function DiscoveryTab({toast}){
     setLoading(false);
   }
 
-  async function importCard(card){
+  // Import en arrière-plan sans bloquer le swipe
+  function importCardBg(card){
     setImportStatus(s=>({...s,[card.titre]:"loading"}));
-    try{
-      const recipe=await claudeJSON(
-        "Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",
-        "Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: "+card.url+"\n\n"+RECIPE_JSON_PROMPT,
-        true
-      );
-      if(recipe?.nom){
-        await notionCreate(DB_RECETTES,{
-          "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
-          "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
-          "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
-          "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
-          "Source":nText(card.url||""),
-        });
+    claudeJSON(
+      "Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",
+      "Génère une recette complète en français pour: \""+card.titre+"\". Description: "+card.description+
+      ". Ingrédients un par ligne avec quantités métriques précises.\n\n"+RECIPE_JSON_PROMPT,
+      false
+    ).then(recipe=>{
+      if(!recipe?.nom){setImportStatus(s=>({...s,[card.titre]:"error"}));return;}
+      return notionCreate(DB_RECETTES,{
+        "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
+        "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
+        "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
+        "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
+        "Source":nText(card.url||""),
+      }).then(()=>{
         setImportStatus(s=>({...s,[card.titre]:"done"}));
-        toast("""+recipe.nom+"" ajoutée à Notion ✓");
-      } else {
-        setImportStatus(s=>({...s,[card.titre]:"error"}));
-      }
-    }catch(e){
-      setImportStatus(s=>({...s,[card.titre]:"error"}));
-      console.error(e);
-    }
+        toast("\""+card.titre+"\" ajoutée à Notion ✓");
+      });
+    }).catch(()=>setImportStatus(s=>({...s,[card.titre]:"error"})));
   }
 
   function swipe(dir){
@@ -1403,11 +1399,12 @@ function DiscoveryTab({toast}){
     const card=cards[current];
     if(dir==="right"){
       setLiked(l=>[...l,card]);
-      importCard(card); // import immédiat en arrière-plan
+      importCardBg(card); // non-bloquant
     }
     setCurrent(c=>c+1);setDragX(0);
   }
-  function onPointerDown(e){startX.current=e.clientX??e.touches?.[0]?.clientX;setDragging(true);}
+
+    function onPointerDown(e){startX.current=e.clientX??e.touches?.[0]?.clientX;setDragging(true);}
   function onPointerMove(e){
     if(!dragging||startX.current==null)return;
     setDragX((e.clientX??e.touches?.[0]?.clientX)-startX.current);
@@ -1418,7 +1415,37 @@ function DiscoveryTab({toast}){
     setDragging(false);startX.current=null;
   }
 
-  // import géré directement dans swipe
+  async function importLiked(){
+    if(!liked.length)return;
+    setImporting(true);
+    let ok=0;
+    for(const card of liked){
+      setImportStatus(s=>({...s,[card.titre]:"loading"}));
+      try{
+        const recipe=await claudeJSON(
+          "Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",
+          "Génère une recette complète en français pour: \""+card.titre+"\". Description: "+card.description+". Ingrédients un par ligne avec quantités métriques.\n\n"+RECIPE_JSON_PROMPT,
+          false // pas de web search = rapide
+        );
+        if(recipe?.nom){
+          await notionCreate(DB_RECETTES,{
+            "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
+            "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
+            "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
+            "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
+            "Source":nText(card.url||""),
+          });
+          setImportStatus(s=>({...s,[card.titre]:"done"}));
+          ok++;
+        }
+      }catch(e){
+        setImportStatus(s=>({...s,[card.titre]:"error"}));
+        console.error(e);
+      }
+    }
+    setImporting(false);setDone(true);
+    toast(ok+" recette"+(ok>1?"s":"")+" importée"+(ok>1?"s":"")+" dans Notion ✓");
+  }
 
   const card=cards[current];
   const isLast=current>=cards.length&&cards.length>0;
@@ -1513,14 +1540,15 @@ function DiscoveryTab({toast}){
                   <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#F8FAFC",borderRadius:10,marginBottom:8,border:"1px solid #E2E8F0"}}>
                     <span style={{fontSize:18}}>{c.emoji||"🍽️"}</span>
                     <span style={{color:"#0F172A",fontSize:13,fontWeight:500,flex:1}}>{c.titre}</span>
-                    {status==="loading"&&<span style={{fontSize:12,color:"#F59E0B"}}>⏳ Import…</span>}
-                    {status==="done"&&<span style={{fontSize:12,color:"#16A34A",fontWeight:600}}>✓ Notion</span>}
-                    {status==="error"&&<span style={{fontSize:12,color:"#DC2626"}}>✕ Erreur</span>}
+                    {status==="loading"&&<span style={{fontSize:12,color:"#F59E0B"}}>⏳…</span>}
+                    {status==="done"&&<span style={{fontSize:12,color:"#16A34A",fontWeight:600}}>✓</span>}
+                    {status==="error"&&<span style={{fontSize:12,color:"#DC2626"}}>✕</span>}
                     {!status&&<span style={{fontSize:11,color:"#94A3B8"}}>{c.categorie}</span>}
                   </div>
                   );
                 })}
               </div>
+
             </>
           )}
           <button onClick={()=>{setCards([]);setCurrent(0);setLiked([]);setDone(false);setPrompt("");}}
