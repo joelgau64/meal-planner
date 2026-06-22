@@ -20,11 +20,19 @@ function setCache(k,d){cache[k]=d;cacheTime[k]=Date.now();}
 
 // ── Notion API ────────────────────────────────────────────────────────────────
 async function notionQuery(dbId,filter,sorts){
-  const body={page_size:200};
-  if(filter)body.filter=filter;
-  if(sorts)body.sorts=sorts;
-  const res=await fetch(`/api/notion?path=/v1/databases/${dbId}/query`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  return res.json();
+  const all=[];
+  let cursor=undefined;
+  do{
+    const body={page_size:100};
+    if(filter)body.filter=filter;
+    if(sorts)body.sorts=sorts;
+    if(cursor)body.start_cursor=cursor;
+    const res=await fetch(`/api/notion?path=/v1/databases/${dbId}/query`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const data=await res.json();
+    all.push(...(data.results||[]));
+    cursor=data.has_more?data.next_cursor:undefined;
+  }while(cursor);
+  return {results:all};
 }
 async function notionCreate(dbId,properties){
   const res=await fetch(`/api/notion?path=/v1/pages`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({parent:{database_id:dbId},properties})});
