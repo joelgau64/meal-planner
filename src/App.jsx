@@ -242,51 +242,74 @@ function StepTimer({seconds,stepIdx}){
 }
 
 function CookingMode({recette,onClose}){
-  const instructions=recette.instructions?recette.instructions.split(/\n|(?=\d+\.)\s*/).filter(s=>s.trim()):[];
-  const [currentStep,setCurrentStep]=useState(0);
+  const instructions=recette.instructions
+    ?recette.instructions.split("\n").filter(s=>s.trim()).map(s=>s.replace(/^\d+\.\s*/,"").trim()).filter(Boolean)
+    :[];
+  const ingredients=recette.ingredients
+    ?recette.ingredients.split("\n").filter(s=>s.trim())
+    :[];
   const total=instructions.length;
+
   return(
     <div style={{position:"fixed",inset:0,zIndex:2000,background:"#FFFFFF",display:"flex",flexDirection:"column"}}>
-      <div style={{padding:"16px 20px",borderBottom:"1px solid #E2E8F0",display:"flex",alignItems:"center",gap:12,background:"#FFFFFF",flexShrink:0}}>
+      {/* Header fixe */}
+      <div style={{padding:"14px 20px",borderBottom:"1px solid #E2E8F0",display:"flex",alignItems:"center",gap:12,background:"#FFFFFF",flexShrink:0,position:"sticky",top:0,zIndex:10}}>
         <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:"#64748B",padding:4}}><Icon name="close" size={20}/></button>
         <div style={{flex:1}}>
-          <div style={{fontSize:11,color:"#94A3B8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Mode cuisine</div>
+          <div style={{fontSize:10,color:"#94A3B8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Mode cuisine</div>
           <div style={{fontSize:14,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display',serif"}}>{recette.nom}</div>
         </div>
-        <span style={{fontSize:13,fontWeight:600,color:"#C2622D"}}>{currentStep+1} / {total}</span>
+        <span style={{fontSize:12,color:"#94A3B8"}}>{recette.temps} min · {recette.portions||4} pers.</span>
       </div>
-      <div style={{height:3,background:"#F1F5F9",flexShrink:0}}>
-        <div style={{height:"100%",width:`${(currentStep/(total-1||1))*100}%`,background:"#C2622D",transition:"width 0.3s"}}/>
-      </div>
-      {recette.photo&&currentStep===0&&<img src={recette.photo} alt={recette.nom} style={{width:"100%",height:160,objectFit:"cover",flexShrink:0}} onError={e=>e.target.style.display="none"}/>}
-      <div style={{flex:1,overflow:"auto",padding:"24px 20px"}}>
-        <div style={{fontSize:11,fontWeight:700,color:"#C2622D",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>Étape {currentStep+1}</div>
-        <p style={{fontSize:17,color:"#0F172A",lineHeight:1.7,margin:0,fontWeight:500}}>{instructions[currentStep]?.replace(/^\d+\.\s*/,"")}</p>
-        {detectTimer(instructions[currentStep]||"")&&<StepTimer key={currentStep} seconds={detectTimer(instructions[currentStep])} stepIdx={currentStep}/>}
-        {currentStep<total-1&&(
-          <div style={{marginTop:24,padding:"12px 14px",background:"#F8FAFC",borderRadius:10,border:"1px solid #F1F5F9"}}>
-            <div style={{fontSize:11,color:"#94A3B8",fontWeight:600,marginBottom:4}}>Étape suivante</div>
-            <p style={{fontSize:13,color:"#94A3B8",margin:0,lineHeight:1.5}}>{instructions[currentStep+1]?.replace(/^\d+\.\s*/,"").substring(0,120)}{instructions[currentStep+1]?.length>120?"…":""}</p>
+
+      {/* Scroll unique */}
+      <div style={{flex:1,overflow:"auto",padding:"0 0 40px"}}>
+
+        {/* Photo */}
+        {recette.photo&&<img src={recette.photo} alt={recette.nom} style={{width:"100%",height:180,objectFit:"cover",display:"block"}} onError={e=>e.target.style.display="none"}/>}
+
+        {/* Ingrédients */}
+        <div style={{padding:"16px 20px 0"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#C2622D",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>🧂 Ingrédients</div>
+          <div style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:12,padding:"12px 14px",marginBottom:24}}>
+            {ingredients.map((ing,i)=>(
+              <div key={i} style={{fontSize:13,color:"#0F172A",padding:"4px 0",borderBottom:i<ingredients.length-1?"1px solid #FED7AA":"none",lineHeight:1.5}}>{ing}</div>
+            ))}
           </div>
-        )}
-        {currentStep===total-1&&(
-          <div style={{marginTop:24,padding:"20px",background:"#F0FDF4",borderRadius:12,textAlign:"center"}}>
-            <div style={{fontSize:32,marginBottom:8}}>🎉</div>
-            <div style={{fontSize:16,fontWeight:700,color:"#065F46"}}>Recette terminée !</div>
+
+          {/* Étapes */}
+          <div style={{fontSize:11,fontWeight:700,color:"#C2622D",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>📋 Étapes</div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {instructions.map((step,i)=>{
+              const timerSec=detectTimer(step);
+              return(
+                <div key={i} style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:12,overflow:"hidden"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#F8FAFC",borderBottom:"1px solid #F1F5F9"}}>
+                    <div style={{width:22,height:22,borderRadius:"50%",background:"#C2622D",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <span style={{fontSize:11,fontWeight:700,color:"#fff"}}>{i+1}</span>
+                    </div>
+                    <span style={{fontSize:11,fontWeight:600,color:"#475569"}}>Étape {i+1} / {total}</span>
+                  </div>
+                  <div style={{padding:"12px 14px"}}>
+                    <p style={{fontSize:15,color:"#0F172A",lineHeight:1.7,margin:0,fontWeight:500}}>{step}</p>
+                    {timerSec&&<StepTimer key={i} seconds={timerSec} stepIdx={i}/>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        )}
-      </div>
-      <div style={{padding:"16px 20px",borderTop:"1px solid #E2E8F0",display:"flex",gap:12,background:"#FFFFFF",flexShrink:0}}>
-        <button onClick={()=>setCurrentStep(s=>Math.max(0,s-1))} disabled={currentStep===0}
-          style={{flex:1,padding:"12px",background:"#F1F5F9",border:"none",borderRadius:10,color:currentStep===0?"#CBD5E1":"#475569",fontWeight:600,fontSize:14,cursor:currentStep===0?"not-allowed":"pointer"}}>← Précédent</button>
-        {currentStep<total-1
-          ?<button onClick={()=>setCurrentStep(s=>s+1)} style={{flex:2,padding:"12px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>Étape suivante →</button>
-          :<button onClick={onClose} style={{flex:2,padding:"12px",background:"#065F46",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>✓ Terminer</button>
-        }
+
+          {/* Fin */}
+          <div style={{marginTop:24,padding:"20px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:12,textAlign:"center"}}>
+            <div style={{fontSize:28,marginBottom:6}}>🎉</div>
+            <div style={{fontSize:15,fontWeight:700,color:"#065F46"}}>Bon appétit !</div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
+
 
 function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning}){
   const basePortion=recette.portions||DEFAULT_PORTIONS;
@@ -941,7 +964,17 @@ function PlanningTab({toast}){
     setConfirming(meal.id);
     const updated=planning.map(p=>p.id===meal.id?{...p,fait:true}:p);
     setPlanning(updated);setCache("planning",updated);
-    notionUpdate(meal.id,{"Acheté":nCheck(true)});
+    // Marquer comme fait dans Planning
+    await notionUpdate(meal.id,{"Acheté":nCheck(true)});
+    // Mettre à jour Fois cuisinée + Dernière cuisson dans DB Recettes
+    const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===(meal.recette||meal.repas));
+    if(recetteData){
+      const newCount=(recetteData.fois_cuisinee||0)+1;
+      await notionUpdate(recetteData.id,{
+        "Fois cuisinée":nNum(newCount),
+        "Dernière cuisson":nDate(new Date().toISOString().split("T")[0]),
+      },DB_RECETTES);
+    }
     toast(`"${meal.recette}" cuisiné ✓`);setConfirming(null);
   };
 
@@ -987,6 +1020,7 @@ function PlanningTab({toast}){
       onTouchEnd={(e)=>{
         if(!touchDragRef.current)return;
         const touch=e.changedTouches[0];
+        // Seuil 150px pour éviter drop accidentel vers queue
         const el=document.elementFromPoint(touch.clientX,touch.clientY);
         const zone=el?.closest("[data-dropzone]");
         if(zone){
