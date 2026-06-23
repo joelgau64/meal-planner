@@ -47,6 +47,7 @@ export default async function handler(req, res) {
 
   // ── Edamam ───────────────────────────────────────────────────────────────────
   async function fetchEdamam() {
+    return []; // Edamam désactivé : limite 1 req/min sur tier gratuit
     if (!edamamId || !edamamKey) return [];
     const q = encodeURIComponent(query);
     const url = `https://api.edamam.com/api/recipes/v2?type=public&q=${q}&app_id=${edamamId}&app_key=${edamamKey}&field=label&field=url&field=source&field=image&field=totalTime&field=cuisineType&field=mealType&field=dishType&from=0&to=6`;
