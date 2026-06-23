@@ -352,7 +352,9 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
   const basePortion=recette.portions||DEFAULT_PORTIONS;
   const [portions,setPortions]=useState(basePortion);
   const [selectedIngredients,setSelectedIngredients]=useState(null);
-  const [cookingMode,setCookingMode]=useState(false); // null = not in ingredient select mode
+  const [cookingMode,setCookingMode]=useState(false);
+  const [currentNote,setCurrentNote]=useState(recette.note||"***");
+  const [savingNote,setSavingNote]=useState(false);
   const score=(recette.likes||0)-(recette.dislikes||0);
 
   const parsedIngredients=parseIngredients(recette.ingredients);
@@ -406,13 +408,33 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
       {recette.photo&&<img src={recette.photo} alt={recette.nom} style={{width:"100%",height:220,objectFit:"cover",borderRadius:10,marginBottom:16}} onError={e=>e.target.style.display="none"}/>}
 
       {/* Header info */}
-      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+      <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
         {recette.categorie&&<span style={{fontSize:12,padding:"4px 10px",borderRadius:6,background:"#F1F5F9",color:"#64748B"}}>{recette.categorie}</span>}
         {recette.temps>0&&<span style={{fontSize:12,padding:"4px 10px",borderRadius:6,background:"#F1F5F9",color:"#64748B"}}>⏱ {recette.temps} min</span>}
         <ScoreBadge score={score}/>
         {recette.fois_cuisinee>0&&<span style={{fontSize:12,color:"#64748B"}}>🍳 {recette.fois_cuisinee}x</span>}
         <DaysSince date={recette.derniere_cuisson}/>
         {recette.sourceUrl&&<a href={recette.sourceUrl} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:4,fontSize:12,color:"#C2622D",textDecoration:"none"}}><Icon name="external" size={12}/> Recette originale</a>}
+      </div>
+
+      {/* Notation étoiles */}
+      <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:16}}>
+        {[1,2,3,4,5].map(n=>{
+          const filled=(currentNote||"").length>=n;
+          return(
+            <button key={n} onClick={async()=>{
+              if(savingNote)return;
+              const newNote="*".repeat(n);
+              setCurrentNote(newNote);setSavingNote(true);
+              await notionUpdate(recette.id,{"Note":nSel(newNote)});
+              setSavingNote(false);toast("Note mise à jour ✓");
+            }}
+            style={{background:"none",border:"none",cursor:"pointer",fontSize:20,padding:"0 1px",lineHeight:1,color:filled?"#F59E0B":"#E2E8F0",transition:"color 0.1s"}}>
+              ★
+            </button>
+          );
+        })}
+        <span style={{fontSize:11,color:"#94A3B8",marginLeft:4}}>{savingNote?"...":(currentNote||"").length+"/5"}</span>
       </div>
 
       {/* Portions adjuster */}
