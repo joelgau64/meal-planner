@@ -20,7 +20,8 @@ export default async function handler(req, res) {
   if (spoonacularKey) {
     try {
       const q = encodeURIComponent(query);
-      const url = `https://api.spoonacular.com/recipes/complexSearch?apiKey=${spoonacularKey}&query=${q}&number=9&addRecipeInformation=true&language=fr&sort=relevance`;
+      // cuisine=french pour privilégier recettes françaises + instructionsRequired pour avoir les étapes
+      const url = `https://api.spoonacular.com/recipes/complexSearch?apiKey=${spoonacularKey}&query=${q}&number=9&addRecipeInformation=true&instructionsRequired=true&sort=relevance&sortDirection=desc`;
       const r = await fetch(url);
       const d = await r.json();
 
@@ -38,8 +39,8 @@ export default async function handler(req, res) {
           categorie: r.dishTypes?.includes('dessert') ? 'Dessert'
                    : r.dishTypes?.includes('lunch') ? 'Déjeuner' : 'Dîner',
           temps: r.readyInMinutes || null,
-          difficulte: r.readyInMinutes < 20 ? 'Facile'
-                    : r.readyInMinutes < 45 ? 'Moyen' : 'Difficile',
+          difficulte: !r.readyInMinutes || r.readyInMinutes <= 20 ? 'Facile'
+                    : r.readyInMinutes <= 45 ? 'Moyen' : 'Difficile',
           emoji: EMOJIS[i % EMOJIS.length],
           image: r.image || null,
           spoonacularId: r.id,

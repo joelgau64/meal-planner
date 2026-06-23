@@ -1597,7 +1597,10 @@ function DiscoveryTab({toast}){
             {dragX<-20&&<div style={{position:"absolute",top:20,left:20,padding:"6px 14px",border:"2px solid #DC2626",borderRadius:8,color:"#DC2626",fontWeight:800,fontSize:15,opacity:skipOpacity,transform:"rotate(12deg)",background:"rgba(254,242,242,.95)"}}>✕ SKIP</div>}
 
             <div>
-              <div style={{fontSize:44,marginBottom:10,textAlign:"center"}}>{card.emoji||"🍽️"}</div>
+              {card.image
+                ?<img src={card.image} alt={card.titre} style={{width:"100%",height:120,objectFit:"cover",borderRadius:12,marginBottom:10}} onError={e=>e.target.style.display="none"}/>
+                :<div style={{fontSize:44,marginBottom:10,textAlign:"center"}}>{card.emoji||"🍽️"}</div>
+              }
               <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
                 {card.categorie&&<span style={{padding:"3px 10px",background:"#FFF7ED",borderRadius:20,fontSize:12,color:"#C2622D",fontWeight:600,border:"1px solid #FDBA74"}}>{card.categorie}</span>}
                 {card.temps&&<span style={{padding:"3px 10px",background:"#F1F5F9",borderRadius:20,fontSize:12,color:"#475569"}}>⏱ {card.temps} min</span>}
