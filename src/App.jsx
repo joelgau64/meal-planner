@@ -763,11 +763,13 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
       if(!recetteData?.ingredients)continue;
       const lines=recetteData.ingredients.split("\n").filter(l=>l.trim());
       for(const line of lines){
-        const trimmed=line.replace(/^[-•*\d.]+\s*/,"").trim();
+        const trimmed=line.replace(/^[-•*]+\s*/,"").trim();
         if(!trimmed)continue;
-        const parts=trimmed.match(/^([\d,./]+\s*(?:g|kg|ml|L|cl|càs|càc|cup|oz)?)?\s*(.+)/i);
+        // Capture: "200g tomates" | "3 càs huile" | "500 g farine" | "2 oeufs"
+        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:g|kg|ml|L|l|cl|càs|càc|cup|oz|pièces?)?(?:\s+(?:de |d'|du |des ))?)?(.+)/i);
         const qty=parts?.[1]?.trim()||"";
-        const nom=parts?.[2]?.trim()||trimmed;
+        const nom=(parts?.[2]?.trim()||trimmed).replace(/^(de |d'|du |des )/i,"").trim();
+        if(!nom)continue;
         list.push({nom,qty,recette:recetteNom,categorie:guessCategory(nom),semaine:`Sem. du ${semaine}`});
       }
     }
@@ -913,7 +915,7 @@ function PlanningTab({toast}){
   const [dragOver,setDragOver]=useState(null);
   const touchDragRef=useRef(null); // {item, ghost, startX, startY}
 
-  // Cleanup global si touch annulé
+  // Cleanup global si touch annulé ou changement de page
   useEffect(()=>{
     const cleanup=()=>{
       if(touchDragRef.current?.ghost){
@@ -923,7 +925,10 @@ function PlanningTab({toast}){
       setDragItem(null);setDragOver(null);
     };
     window.addEventListener("touchcancel",cleanup);
-    return()=>window.removeEventListener("touchcancel",cleanup);
+    return()=>{
+      window.removeEventListener("touchcancel",cleanup);
+      cleanup(); // nettoyage au unmount du composant
+    };
   },[]);
   const [confirming,setConfirming]=useState(null);
   const [form,setForm]=useState({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
@@ -991,7 +996,7 @@ function PlanningTab({toast}){
       await notionUpdate(recetteData.id,{
         "Fois cuisinée":nNum(newCount),
         "Dernière cuisson":nDate(new Date().toISOString().split("T")[0]),
-      },DB_RECETTES);
+      });
     }
     toast(`"${meal.recette}" cuisiné ✓`);setConfirming(null);
   };
@@ -1013,50 +1018,61 @@ function PlanningTab({toast}){
   const queueItems=planning.filter(p=>p.queue);
   const weekLabel=()=>({0:"Cette semaine",1:"Semaine prochaine","-1":"Semaine dernière"}[weekOffset]||`Sem. ${weekOffset>0?"+":""}${weekOffset}`);
 
-  const MealChip=({meal,onViewRecette,onMoveToQueue})=>(
+  const MealChip=({meal,onViewRecette,onMoveToQueue})=>{
+    const longPressTimer=useRef(null);
+    const isDragging=useRef(false);
 
-    <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
-      onTouchStart={(e)=>{
-        const touch=e.touches[0];
+    const handleTouchStart=(e)=>{
+      isDragging.current=false;
+      const touch=e.touches[0];
+      longPressTimer.current=setTimeout(()=>{
+        isDragging.current=true;
         const ghost=e.currentTarget.cloneNode(true);
         ghost.style.cssText=`position:fixed;top:${touch.clientY-30}px;left:${touch.clientX-80}px;width:160px;opacity:0.85;z-index:9999;pointer-events:none;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.2);`;
         document.body.appendChild(ghost);
         touchDragRef.current={item:meal,ghost,startX:touch.clientX,startY:touch.clientY};
         setDragItem(meal);
-      }}
-      onTouchMove={(e)=>{
-        if(!touchDragRef.current)return;
-        e.preventDefault();
-        const touch=e.touches[0];
-        touchDragRef.current.ghost.style.top=touch.clientY-30+"px";
-        touchDragRef.current.ghost.style.left=touch.clientX-80+"px";
-        // Détecter la drop zone sous le doigt
-        const el=document.elementFromPoint(touch.clientX,touch.clientY);
-        const zone=el?.closest("[data-dropzone]");
-        setDragOver(zone?.dataset.dropzone||null);
-      }}
-      onTouchEnd={(e)=>{
-        if(!touchDragRef.current)return;
-        const touch=e.changedTouches[0];
-        // Seuil 150px pour éviter drop accidentel vers queue
-        const el=document.elementFromPoint(touch.clientX,touch.clientY);
-        const zone=el?.closest("[data-dropzone]");
-        if(zone){
-          const key=zone.dataset.dropzone;
-          if(key==="queue"){
-            const updated=planning.map(p=>p.id===dragItem.id?{...p,queue:true}:p);
-            setPlanning(updated);
-            notionUpdate(dragItem.id,{"File d'attente":nCheck(true)});
-            toast(`"${dragItem.recette}" remis en file d'attente ✓`);
-          } else {
-            handleDrop(key,"Dîner");
-          }
-        }
-        touchDragRef.current.ghost.remove();
-        touchDragRef.current=null;
-        setDragItem(null);setDragOver(null);
-      }}
-      style={{borderRadius:6,overflow:"hidden",marginBottom:4,opacity:dragItem?.id===meal.id?0.4:1,cursor:"grab",touchAction:"none"}}>
+      },300); // 300ms = long press
+    };
+
+    const handleTouchMove=(e)=>{
+      if(!isDragging.current){clearTimeout(longPressTimer.current);return;}
+      if(!touchDragRef.current)return;
+      e.preventDefault();
+      const touch=e.touches[0];
+      touchDragRef.current.ghost.style.top=touch.clientY-30+"px";
+      touchDragRef.current.ghost.style.left=touch.clientX-80+"px";
+      const el=document.elementFromPoint(touch.clientX,touch.clientY);
+      const zone=el?.closest("[data-dropzone]");
+      setDragOver(zone?.dataset.dropzone||null);
+    };
+
+    const handleTouchEnd=(e)=>{
+      clearTimeout(longPressTimer.current);
+      if(!isDragging.current){setDragItem(null);return;}
+      if(!touchDragRef.current)return;
+      const touch=e.changedTouches[0];
+      const el=document.elementFromPoint(touch.clientX,touch.clientY);
+      const zone=el?.closest("[data-dropzone]");
+      if(zone){
+        const key=zone.dataset.dropzone;
+        if(key==="queue"){
+          const updated=planning.map(p=>p.id===dragItem.id?{...p,queue:true}:p);
+          setPlanning(updated);
+          notionUpdate(dragItem.id,{"File d'attente":nCheck(true)});
+          toast(`"${dragItem.recette}" remis en file d'attente ✓`);
+        } else { handleDrop(key,"Dîner"); }
+      }
+      try{touchDragRef.current.ghost.remove();}catch(e){}
+      touchDragRef.current=null;
+      setDragItem(null);setDragOver(null);
+      isDragging.current=false;
+    };
+
+    return(
+    <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
+      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+      style={{borderRadius:6,overflow:"hidden",marginBottom:4,opacity:dragItem?.id===meal.id?0.4:1,cursor:"grab"}}>
       <div style={{padding:"4px 7px",fontSize:11,fontWeight:600,background:`${MOMENT_COLORS[meal.moment]||"#64748B"}22`,color:MOMENT_COLORS[meal.moment]||"#94A3B8",lineHeight:1.3,textDecoration:meal.fait?"line-through":"none",opacity:meal.fait?0.5:1,display:"flex",alignItems:"center",gap:4}}>
         <Icon name="drag" size={8}/>
         <span style={{flex:1,cursor:"pointer"}} onClick={(e)=>{e.stopPropagation();onViewRecette&&onViewRecette(meal);}}>{meal.recette||meal.repas}</span>
@@ -1067,7 +1083,8 @@ function PlanningTab({toast}){
         {meal.fait&&<div style={{flex:1,padding:"2px 7px",background:"#D1FAE5",fontSize:9,color:"#065F46",fontWeight:700,textAlign:"center"}}>✓ fait</div>}
       </div>
     </div>
-  );
+    );
+  };
 
   return(
     <div>
@@ -1084,8 +1101,8 @@ function PlanningTab({toast}){
             const twoWeeksLater=new Date(today);twoWeeksLater.setDate(today.getDate()+14);
             const todayStr=today.toISOString().split("T")[0];
             const limitStr=twoWeeksLater.toISOString().split("T")[0];
-            const planned=planning.filter(p=>!p.queue&&p.date&&p.date>=todayStr&&p.date<=limitStr);
-            const meals=[...queueItems,...planned];
+            const planned=planning.filter(p=>!p.queue&&!p.fait&&p.date&&p.date>=todayStr&&p.date<=limitStr);
+            const meals=[...queueItems.filter(m=>!m.fait),...planned];
             const unique=[];const seen=new Set();
             meals.forEach(m=>{const k=m.recette||m.repas;if(k&&!seen.has(k)){seen.add(k);unique.push(m);}});
             setCoursesSelection(unique.map(m=>({...m,selected:true})));
@@ -1100,7 +1117,7 @@ function PlanningTab({toast}){
       {loading?<Spinner label="Chargement..."/>:(
         <div>
           {/* Week grid */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:16}} className="planning-grid">
             {weekDates.map((date,i)=>{
               const meals=getMeals(date);const today=isToday(date);const past=isPast(date);
               const dropKey=date.toISOString().split("T")[0];
@@ -1111,9 +1128,9 @@ function PlanningTab({toast}){
                   onDrop={()=>handleDrop(dropKey,"Dîner")}
                   data-dropzone={dropKey}
                   style={{background:dragOver===dropKey?"#FEF3C7":today?"#FFF7ED":"#FFFFFF",border:`1px solid ${dragOver===dropKey?"#C2622D":today?"#C2622D":"#E2E8F0"}`,borderRadius:10,padding:8,minHeight:120,opacity:past?0.75:1,transition:"all 0.15s"}}>
-                  <div style={{marginBottom:6}}>
-                    <div style={{fontSize:10,fontWeight:600,color:today?"#F4A57A":"#64748B",textTransform:"uppercase"}}>{DAYS[i].slice(0,3)}</div>
-                    <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#F8FAFC",fontFamily:"'Playfair Display', serif"}}>{date.getDate()}</div>
+                  <div className="day-header" style={{marginBottom:6}}>
+                    <div style={{fontSize:10,fontWeight:600,color:today?"#C2622D":"#64748B",textTransform:"uppercase"}}>{DAYS[i].slice(0,3)}</div>
+                    <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#0F172A",fontFamily:"'Playfair Display', serif"}}>{date.getDate()}</div>
                   </div>
                   {meals.length===0&&<div style={{fontSize:10,color:"#94A3B8",textAlign:"center",paddingTop:8}}>—</div>}
                   {meals.map((m,j)=><MealChip key={j} meal={m}
@@ -1599,8 +1616,15 @@ export default function App(){
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
         *{box-sizing:border-box;}
         @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
-        ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#0F172A;}::-webkit-scrollbar-thumb{background:#334155;border-radius:4px;}
-        select option{background:#1E293B;}
+        ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#F1F5F9;}::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:4px;}
+        select option{background:#FFFFFF;}
+        @media(max-width:640px){
+          .planning-grid{grid-template-columns:1fr!important;}
+          .planning-grid>div{min-height:auto!important;flex-direction:row!important;display:flex!important;align-items:flex-start!important;gap:10px!important;}
+          .planning-grid>div>.day-header{min-width:48px!important;flex-shrink:0!important;}
+          .recipe-detail-modal{max-width:100%!important;width:100%!important;}
+          .courses-list{padding:0 8px!important;}
+        }
       `}</style>
       <div style={{borderBottom:"1px solid #0F172A",padding:"0 24px",background:"#F8FAFC",position:"sticky",top:0,zIndex:100}}>
         <div style={{maxWidth:980,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
