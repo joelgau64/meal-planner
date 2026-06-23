@@ -76,7 +76,7 @@ function parseRecette(page){
 }
 function parsePlanning(page){
   const p=page.properties;
-  return{id:page.id,repas:getTitle(page),date:getDate(p["Date"]),moment:getSelect(p["Moment"]),recette:getText(p["Recette"]),recette_id:getText(p["Recette ID"]),portions:getNum(p["Portions"])||DEFAULT_PORTIONS,notes:getText(p["Notes"]),fait:getCheck(p["Acheté"]),queue:getCheck(p["File d'attente"])};
+  return{id:page.id,repas:getTitle(page),date:getDate(p["Date"]),moment:getSelect(p["Moment"]),recette:getText(p["Recette"]),recette_id:getText(p["Recette ID"]),portions:getNum(p["Portions"])||DEFAULT_PORTIONS,notes:getText(p["Notes"]),fait:getCheck(p["Cuisiné"]),queue:getCheck(p["File d'attente"])};
 }
 function parseCourse(page){
   const p=page.properties;
@@ -371,7 +371,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
           const semaine=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
           for(const ing of toAdd){
             const qty=`${ing.displayQty||ing.qty||""} ${ing.unit}`.trim();
-            await notionCreate(DB_COURSES,{"Article":nTitle(ing.name),"Catégorie":nSel(guessCategory(ing.name)),"Quantité":nText(qty),"Acheté":nCheck(false),"Semaine":nText(`Sem. du ${semaine}`),"Recette":nText(recette.nom)});
+            await notionCreate(DB_COURSES,{"Article":nTitle(ing.name),"Catégorie":nSel(guessCategory(ing.name)),"Quantité":nText(qty),"Semaine":nText(`Sem. du ${semaine}`),"Recette":nText(recette.nom)});
           }
           setCache("courses",null);
           toast(`${toAdd.length} ingrédients ajoutés aux courses ✓`);
@@ -823,7 +823,7 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
       try{
         const created=await notionCreate(DB_COURSES,{
           "Article":nTitle(ing.nom),"Catégorie":nSel(ing.categorie),
-          "Quantité":nText(ing.qty),"Acheté":nCheck(false),
+          "Quantité":nText(ing.qty),
           "Semaine":nText(ing.semaine),"Recette":nText(ing.recette),
         });
         if(created&&created.object!=="skip"){
@@ -1002,7 +1002,7 @@ function PlanningTab({toast}){
     const updated=planning.map(p=>p.id===meal.id?{...p,fait:true}:p);
     setPlanning(updated);setCache("planning",updated);
     // Marquer comme fait dans Planning
-    const updateRes=await notionUpdate(meal.id,{"Acheté":nCheck(true)});
+    const updateRes=await notionUpdate(meal.id,{"Cuisiné":nCheck(true)});
     if(updateRes?.object==="error") console.error("confirmCuisine error:",updateRes.message);
     // Mettre à jour Fois cuisinée + Dernière cuisson dans DB Recettes
     const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===(meal.recette||meal.repas));
@@ -1311,7 +1311,7 @@ function CoursesTab({toast}){
 
   const addItem=async()=>{
     setSaving(true);
-    await notionCreate(DB_COURSES,{"Article":nTitle(form.article),"Catégorie":nSel(form.categorie),"Quantité":nText(form.quantite),"Acheté":nCheck(false),"Semaine":nText(form.semaine),"Recette":nText(form.recette)});
+    await notionCreate(DB_COURSES,{"Article":nTitle(form.article),"Catégorie":nSel(form.categorie),"Quantité":nText(form.quantite),"Semaine":nText(form.semaine),"Recette":nText(form.recette)});
     toast("Article ajouté ✓");setSaving(false);setShowForm(false);
     setForm({article:"",categorie:"Épicerie",quantite:"",semaine:"",recette:""});
     setCache("courses",null);load(true);
