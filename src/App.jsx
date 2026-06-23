@@ -13,6 +13,15 @@ const DEFAULT_PORTIONS = 4;
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 const cache = {recettes:null,planning:null,courses:null};
+
+// ── Error logging ─────────────────────────────────────────────────────────────
+const errorLog = [];
+function logError(context, error, details=null){
+  const entry = {time:new Date().toLocaleTimeString('fr-FR'), context, message: error?.message||String(error), details};
+  errorLog.push(entry);
+  if(errorLog.length>50) errorLog.shift();
+  console.error(`[${context}]`, error, details||'');
+}
 const cacheTime = {recettes:0,planning:0,courses:0};
 const CACHE_TTL = 5*60*1000;
 function getCached(k){return cache[k]&&Date.now()-cacheTime[k]<CACHE_TTL?cache[k]:null;}
@@ -22,16 +31,22 @@ function setCache(k,d){cache[k]=d;cacheTime[k]=Date.now();}
 async function notionQuery(dbId,filter,sorts){
   const all=[];
   let cursor=undefined;
-  do{
-    const body={page_size:100};
-    if(filter)body.filter=filter;
-    if(sorts)body.sorts=sorts;
-    if(cursor)body.start_cursor=cursor;
-    const res=await fetch(`/api/notion?path=/v1/databases/${dbId}/query`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    const data=await res.json();
-    all.push(...(data.results||[]));
-    cursor=data.has_more?data.next_cursor:undefined;
-  }while(cursor);
+  try{
+    do{
+      const body={page_size:100};
+      if(filter)body.filter=filter;
+      if(sorts)body.sorts=sorts;
+      if(cursor)body.start_cursor=cursor;
+      const res=await fetch(`/api/notion?path=/v1/databases/${dbId}/query`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const data=await res.json();
+      if(data.object==="error") throw new Error(data.message);
+      all.push(...(data.results||[]));
+      cursor=data.has_more?data.next_cursor:undefined;
+    }while(cursor);
+  }catch(e){
+    logError("notionQuery",e,{dbId});
+    throw e;
+  }
   return {results:all};
 }
 async function notionCreate(dbId,properties){
@@ -46,11 +61,15 @@ async function notionCreate(dbId,properties){
     }
   }
   const res=await fetch(`/api/notion?path=/v1/pages`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({parent:{database_id:dbId},properties})});
-  return res.json();
+  const data=await res.json();
+  if(data.object==="error") logError("notionCreate",new Error(data.message),{dbId});
+  return data;
 }
 async function notionUpdate(pageId,properties){
   const res=await fetch(`/api/notion?path=/v1/pages/${pageId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({properties})});
-  return res.json();
+  const data=await res.json();
+  if(data.object==="error") logError("notionUpdate",new Error(data.message),{pageId,props:Object.keys(properties)});
+  return data;
 }
 
 // ── Notion helpers ────────────────────────────────────────────────────────────
@@ -1435,27 +1454,40 @@ function DiscoveryTab({toast}){
     setLoading(false);
   }
 
-  // Import en arrière-plan sans bloquer le swipe
+  // Import en arrière-plan : extrait depuis la vraie URL si dispo, sinon génère
   function importCardBg(card){
     setImportStatus(s=>({...s,[card.titre]:"loading"}));
-    claudeJSON(
-      "Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",
-      "Génère une recette complète en français pour: \""+card.titre+"\". Description: "+card.description+
-      ". Ingrédients un par ligne avec quantités métriques précises.\n\n"+RECIPE_JSON_PROMPT,
-      false
-    ).then(recipe=>{
-      if(!recipe?.nom){setImportStatus(s=>({...s,[card.titre]:"error"}));return;}
+    const useUrl=card.url&&card.url.startsWith("http");
+    const prompt=useUrl
+      ?`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${card.url}\n\n${RECIPE_JSON_PROMPT}`
+      :`Génère une recette complète en français pour: "${card.titre}". Description: ${card.description}. Ingrédients un par ligne avec quantités métriques.\n\n${RECIPE_JSON_PROMPT}`;
+
+    claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.", prompt, useUrl)
+    .then(recipe=>{
+      if(!recipe?.nom){
+        logError("importCardBg", new Error("Claude n'a pas retourné de recette valide"), {card:card.titre});
+        setImportStatus(s=>({...s,[card.titre]:"error"}));
+        return;
+      }
       return notionCreate(DB_RECETTES,{
         "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
         "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
         "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
         "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
         "Source":nText(card.url||""),
-      }).then(()=>{
-        setImportStatus(s=>({...s,[card.titre]:"done"}));
-        toast("\""+card.titre+"\" ajoutée à Notion ✓");
+      }).then(r=>{
+        if(r?.object==="skip"){
+          setImportStatus(s=>({...s,[card.titre]:"done"}));
+          toast("\""+card.titre+"\" déjà dans vos recettes");
+        } else {
+          setImportStatus(s=>({...s,[card.titre]:"done"}));
+          toast("\""+card.titre+"\" ajoutée ✓");
+        }
       });
-    }).catch(()=>setImportStatus(s=>({...s,[card.titre]:"error"})));
+    }).catch(e=>{
+      logError("importCardBg", e, {card:card.titre});
+      setImportStatus(s=>({...s,[card.titre]:"error"}));
+    });
   }
 
   function swipe(dir){
@@ -1479,39 +1511,6 @@ function DiscoveryTab({toast}){
     setDragging(false);startX.current=null;
   }
 
-  async function importLiked(){
-    if(!liked.length)return;
-    setImporting(true);
-    let ok=0;
-    for(const card of liked){
-      setImportStatus(s=>({...s,[card.titre]:"loading"}));
-      try{
-        const recipe=await claudeJSON(
-          "Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",
-          "Génère une recette complète en français pour: \""+card.titre+"\". Description: "+card.description+". Ingrédients un par ligne avec quantités métriques.\n\n"+RECIPE_JSON_PROMPT,
-          false // pas de web search = rapide
-        );
-        if(recipe?.nom){
-          await notionCreate(DB_RECETTES,{
-            "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
-            "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
-            "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
-            "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
-            "Source":nText(card.url||""),
-          });
-          setImportStatus(s=>({...s,[card.titre]:"done"}));
-          ok++;
-        }
-      }catch(e){
-        setImportStatus(s=>({...s,[card.titre]:"error"}));
-        console.error(e);
-      }
-    }
-    setImporting(false);setDone(true);
-    toast(ok+" recette"+(ok>1?"s":"")+" importée"+(ok>1?"s":"")+" dans Notion ✓");
-  }
-
-  const card=cards[current];
   const isLast=current>=cards.length&&cards.length>0;
   const rotation=dragX/20;
   const likeOpacity=Math.min(1,dragX/60);
@@ -1632,11 +1631,49 @@ function DiscoveryTab({toast}){
   );
 }
 
+// ── Error Panel ──────────────────────────────────────────────────────────────
+function ErrorPanel({onClose}){
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:3000,background:"rgba(15,23,42,0.7)",display:"flex",alignItems:"flex-end"}}>
+      <div style={{width:"100%",maxHeight:"70vh",background:"#FFFFFF",borderRadius:"16px 16px 0 0",padding:20,overflow:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <span style={{fontWeight:700,fontSize:15,color:"#0F172A"}}>🔍 Logs d'erreur ({errorLog.length})</span>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{errorLog.length=0;onClose();}} style={{padding:"4px 10px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,color:"#DC2626",fontSize:12,cursor:"pointer"}}>Effacer</button>
+            <button onClick={onClose} style={{padding:"4px 10px",background:"#F1F5F9",border:"none",borderRadius:6,color:"#475569",fontSize:12,cursor:"pointer"}}>Fermer</button>
+          </div>
+        </div>
+        {errorLog.length===0&&<p style={{color:"#94A3B8",fontSize:13,textAlign:"center",padding:"20px 0"}}>Aucune erreur 🎉</p>}
+        {[...errorLog].reverse().map((e,i)=>(
+          <div key={i} style={{padding:"10px 12px",background:"#FFF7ED",border:"1px solid #FED7AA",borderRadius:8,marginBottom:8}}>
+            <div style={{display:"flex",gap:8,marginBottom:4}}>
+              <span style={{fontSize:11,color:"#94A3B8"}}>{e.time}</span>
+              <span style={{fontSize:11,fontWeight:700,color:"#C2622D"}}>{e.context}</span>
+            </div>
+            <div style={{fontSize:13,color:"#0F172A",fontWeight:500}}>{e.message}</div>
+            {e.details&&<pre style={{fontSize:11,color:"#64748B",marginTop:4,whiteSpace:"pre-wrap",wordBreak:"break-all"}}>{JSON.stringify(e.details,null,2)}</pre>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App(){
   const [tab,setTab]=useState("recettes");
   const [toastMsg,setToastMsg]=useState(null);
+  const [showErrorPanel,setShowErrorPanel]=useState(false);
+  const [errorCount,setErrorCount]=useState(0);
   const toast=msg=>setToastMsg(msg);
+
+  // Surveiller les nouvelles erreurs
+  useEffect(()=>{
+    const interval=setInterval(()=>{
+      if(errorLog.length>errorCount) setErrorCount(errorLog.length);
+    },1000);
+    return()=>clearInterval(interval);
+  },[errorCount]);
   const tabs=[{id:"recettes",label:"Recettes",icon:"book"},{id:"planning",label:"Planning",icon:"calendar"},{id:"courses",label:"Courses",icon:"cart"},{id:"discovery",label:"✨",icon:"sparkle"}];
 
   return(
@@ -1664,6 +1701,7 @@ export default function App(){
           <nav style={{display:"flex",gap:2,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",paddingBottom:2}}>
             {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 10px",borderRadius:8,whiteSpace:"nowrap",flexShrink:0,fontSize:12,background:tab===t.id?"#C2622D":"transparent",border:"none",color:tab===t.id?"#FFFFFF":"#64748B",fontWeight:tab===t.id?700:500,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}><Icon name={t.icon} size={15}/>{t.label}</button>))}
           </nav>
+          {errorCount>0&&<button onClick={()=>setShowErrorPanel(true)} style={{padding:"4px 8px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,color:"#DC2626",fontSize:11,cursor:"pointer",fontWeight:700}}>⚠️ {errorCount}</button>}
         </div>
       </div>
       <div style={{maxWidth:980,margin:"0 auto",padding:"28px 24px"}}>
@@ -1672,7 +1710,8 @@ export default function App(){
         {tab==="courses"&&<CoursesTab toast={toast}/>}
         {tab==="discovery"&&<DiscoveryTab toast={toast}/>}
       </div>
-      {toastMsg&&<Toast message={toastMsg} onClose={()=>setToastMsg(null)}/>}
+      {toastMsg&&<Toast message={toastMsg} onClose={()=>setToastMsg(null)}/> }
+      {showErrorPanel&&<ErrorPanel onClose={()=>{setShowErrorPanel(false);setErrorCount(0);}}/> }
     </div>
   );
 }
