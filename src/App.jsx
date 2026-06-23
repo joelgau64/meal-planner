@@ -766,9 +766,10 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
         const trimmed=line.replace(/^[-•*]+\s*/,"").trim();
         if(!trimmed)continue;
         // Capture: "200g tomates" | "3 càs huile" | "500 g farine" | "2 oeufs"
-        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:g|kg|ml|L|l|cl|càs|càc|cup|oz|pièces?)?(?:\s+(?:de |d'|du |des ))?)?(.+)/i);
+        // Regex : capture quantité+unité puis nom — "g" unité seulement si suivi d'espace ou fin
+        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:kg|ml|L|l|cl|càs|càc|cup|oz|pièces?|g(?=\s|$))?(?:\s+(?:de |d'|du |des ))?)?(.+)/i);
         const qty=parts?.[1]?.trim()||"";
-        const nom=(parts?.[2]?.trim()||trimmed).replace(/^(de |d'|du |des )/i,"").trim();
+        const nom=(parts?.[2]?.trim()||trimmed).replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/,"").trim();
         if(!nom)continue;
         list.push({nom,qty,recette:recetteNom,categorie:guessCategory(nom),semaine:`Sem. du ${semaine}`});
       }
@@ -776,6 +777,8 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
     return list;
   };
 
+  // Déduplication recettes par nom
+  const [addedRecettes]=useState(()=>new Set());
   const [ingsList,setIngsList]=useState(()=>buildIngredients(coursesSelection.filter(m=>m.selected)).map(i=>({...i,selected:true})));
 
   // Reconstruire quand la sélection recettes change
@@ -811,21 +814,32 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
 
   const doImport=async()=>{
     setGeneratingCourses(true);
+    const toImport=ingsList.filter(i=>i.selected);
+    // Fermer immédiatement la modale
+    onClose();
     let ok=0;
-    for(const ing of ingsList.filter(i=>i.selected)){
+    const newItems=[];
+    for(const ing of toImport){
       try{
-        await notionCreate(DB_COURSES,{
+        const created=await notionCreate(DB_COURSES,{
           "Article":nTitle(ing.nom),"Catégorie":nSel(ing.categorie),
           "Quantité":nText(ing.qty),"Acheté":nCheck(false),
           "Semaine":nText(ing.semaine),"Recette":nText(ing.recette),
         });
-        ok++;
+        if(created&&created.object!=="skip"){
+          newItems.push({
+            id:created.id,nom:ing.nom,categorie:ing.categorie,
+            quantite:ing.qty,achete:false,semaine:ing.semaine,recette:ing.recette
+          });
+          ok++;
+        }
       }catch(e){console.error(e);}
     }
     setGeneratingCourses(false);
-    setShowCoursesModal(false);
-    toast(`${ok} articles ajoutés à la liste de courses ✓`);
-    setCache("courses",null);
+    // Mettre à jour le cache courses directement sans recharger
+    const existing=getCache("courses")||[];
+    setCache("courses",[...existing,...newItems]);
+    toast(ok+" article"+(ok>1?"s":"")+" ajouté"+(ok>1?"s":"")+" à la liste de courses ✓");
   };
 
   return(
@@ -899,7 +913,7 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
 
       <button disabled={generatingCourses||totalSel===0} onClick={doImport}
         style={totalSel>0&&!generatingCourses?{...btnPrimary,marginTop:8,width:"100%"}:{...btnDisabled,marginTop:8,width:"100%"}}>
-        {generatingCourses?"Import en cours...":"Importer "+totalSel+" article"+(totalSel>1?"s":"")+" dans Notion"}
+        {generatingCourses?"Ajout en cours...":"Ajouter "+totalSel+" article"+(totalSel>1?"s":"")+" à la liste de courses"}
       </button>
     </Modal>
   );
