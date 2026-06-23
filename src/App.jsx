@@ -1476,41 +1476,47 @@ function DiscoveryTab({toast}){
     setLoading(false);
   }
 
-  // Import en arrière-plan : extrait depuis la vraie URL si dispo, sinon génère
+  // Import en arrière-plan : Spoonacular (0 crédit) → Claude fallback
   function importCardBg(card){
     setImportStatus(s=>({...s,[card.titre]:"loading"}));
-    const useUrl=card.url&&card.url.startsWith("http");
-    const prompt=useUrl
-      ?`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${card.url}\n\n${RECIPE_JSON_PROMPT}`
-      :`Génère une recette complète en français pour: "${card.titre}". Description: ${card.description}. Ingrédients un par ligne avec quantités métriques.\n\n${RECIPE_JSON_PROMPT}`;
 
-    claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.", prompt, useUrl)
-    .then(recipe=>{
+    const doImport=(recipe)=>{
       if(!recipe?.nom){
-        logError("importCardBg", new Error("Claude n'a pas retourné de recette valide"), {card:card.titre});
-        setImportStatus(s=>({...s,[card.titre]:"error"}));
-        return;
+        logError("importCardBg",new Error("Recette invalide"),{card:card.titre});
+        setImportStatus(s=>({...s,[card.titre]:"error"}));return;
       }
-      return notionCreate(DB_RECETTES,{
+      notionCreate(DB_RECETTES,{
         "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
         "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
         "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
         "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
         "Source":nText(card.url||""),
+        ...(card.image?{"Photo":nUrl(card.image)}:{}),
       }).then(r=>{
-        if(r?.object==="skip"){
-          setImportStatus(s=>({...s,[card.titre]:"done"}));
-          toast("\""+card.titre+"\" déjà dans vos recettes");
-        } else {
-          setImportStatus(s=>({...s,[card.titre]:"done"}));
-          toast("\""+card.titre+"\" ajoutée ✓");
-        }
-      });
-    }).catch(e=>{
-      logError("importCardBg", e, {card:card.titre});
-      setImportStatus(s=>({...s,[card.titre]:"error"}));
-    });
+        setImportStatus(s=>({...s,[card.titre]:r?.object==="skip"?"skip":"done"}));
+        toast(r?.object==="skip"?"\""+card.titre+"\" déjà dans vos recettes":"\""+card.titre+"\" ajoutée ✓");
+      }).catch(e=>{logError("importCardBg",e,{card:card.titre});setImportStatus(s=>({...s,[card.titre]:"error"}));});
+    };
+
+    // Spoonacular : recette complète sans Claude
+    if(card.spoonacularId){
+      fetch("/api/spoonacular-recipe?id="+card.spoonacularId)
+        .then(r=>r.json())
+        .then(recipe=>{ if(recipe?.nom) doImport(recipe); else claudeFallback(); })
+        .catch(()=>claudeFallback());
+    } else { claudeFallback(); }
+
+    function claudeFallback(){
+      const useUrl=card.url&&card.url.startsWith("http");
+      const prompt=useUrl
+        ?`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${card.url}\n\n${RECIPE_JSON_PROMPT}`
+        :`Génère une recette pour: "${card.titre}". Description: ${card.description}. Ingrédients un par ligne.\n\n${RECIPE_JSON_PROMPT}`;
+      claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide.",prompt,useUrl)
+        .then(doImport)
+        .catch(e=>{logError("importCardBg",e,{card:card.titre});setImportStatus(s=>({...s,[card.titre]:"error"}));});
+    }
   }
+
 
   function swipe(dir){
     if(current>=cards.length)return;

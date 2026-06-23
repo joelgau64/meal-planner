@@ -8,46 +8,52 @@ export default async function handler(req, res) {
   const { query } = req.body;
   if (!query) return res.status(400).json({ error: 'query required' });
 
-  const googleKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const googleCX  = process.env.GOOGLE_SEARCH_CX;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const spoonacularKey = process.env.SPOONACULAR_API_KEY;
+  const anthropicKey   = process.env.ANTHROPIC_API_KEY;
 
   const month = new Date().getMonth() + 1;
   const saison = month >= 3 && month <= 5 ? 'printemps' :
                  month >= 6 && month <= 8 ? 'été' :
                  month >= 9 && month <= 11 ? 'automne' : 'hiver';
 
-  // ── 1. Essai Google Custom Search (gratuit, vraies URLs) ─────────────────
-  if (googleKey && googleCX) {
+  // ── 1. Spoonacular (gratuit 150 req/jour, vraies recettes) ────────────────
+  if (spoonacularKey) {
     try {
-      const q = encodeURIComponent(`${query} recette`);
-      const url = `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCX}&q=${q}&num=9&lr=lang_fr&gl=fr`;
+      const q = encodeURIComponent(query);
+      const url = `https://api.spoonacular.com/recipes/complexSearch?apiKey=${spoonacularKey}&query=${q}&number=9&addRecipeInformation=true&language=fr&sort=relevance`;
       const r = await fetch(url);
       const d = await r.json();
 
-      if (d.error) {
-        console.warn('[search] Google CSE error:', d.error.message);
-      } else if (d.items?.length > 0) {
-        const results = d.items.map(item => ({
-          titre: item.title.replace(/\s*[-|]\s*(Marmiton|750g|CuisineAZ|Chef Simon|Cuisine AZ|Recette\.de)\s*$/gi, '').trim(),
-          url: item.link,
-          description: item.snippet,
-          source: item.displayLink,
-          categorie: 'Dîner',
-          temps: null,
-          difficulte: null,
-          emoji: null,
+      if (d.status === 'failure') {
+        console.warn('[search] Spoonacular error:', d.message);
+      } else if (d.results?.length > 0) {
+        const EMOJIS = ['🍽️','🥗','🍲','🥘','🍜','🥩','🐟','🥦','🍋','🫐'];
+        const results = d.results.map((r, i) => ({
+          titre: r.title,
+          url: r.sourceUrl || r.spoonacularSourceUrl || '',
+          description: r.summary
+            ? r.summary.replace(/<[^>]+>/g, '').substring(0, 150) + '…'
+            : `${r.readyInMinutes} min · ${r.servings} pers.`,
+          source: r.creditsText || r.sourceName || 'Spoonacular',
+          categorie: r.dishTypes?.includes('dessert') ? 'Dessert'
+                   : r.dishTypes?.includes('lunch') ? 'Déjeuner' : 'Dîner',
+          temps: r.readyInMinutes || null,
+          difficulte: r.readyInMinutes < 20 ? 'Facile'
+                    : r.readyInMinutes < 45 ? 'Moyen' : 'Difficile',
+          emoji: EMOJIS[i % EMOJIS.length],
+          image: r.image || null,
+          spoonacularId: r.id,
         }));
-        return res.status(200).json({ results, source: 'google' });
+        return res.status(200).json({ results, source: 'spoonacular' });
       }
     } catch (err) {
-      console.warn('[search] Google CSE exception:', err.message);
+      console.warn('[search] Spoonacular exception:', err.message);
     }
   }
 
-  // ── 2. Fallback Claude (sans web search = rapide, ~3s) ───────────────────
+  // ── 2. Fallback Claude Haiku (sans web search, ~3s) ───────────────────────
   if (!anthropicKey) {
-    return res.status(500).json({ error: 'Aucune source de recherche disponible (Google CSE non configuré, ANTHROPIC_API_KEY absent)', source: 'none' });
+    return res.status(500).json({ error: 'Aucune source disponible', source: 'none' });
   }
 
   try {
@@ -56,16 +62,16 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001', // Haiku = moins cher que Sonnet
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1500,
         system: 'Tu es un chef cuisinier. Retourne UNIQUEMENT un tableau JSON valide, sans backtick.',
         messages: [{
           role: 'user',
           content: `Date: ${today}, saison: ${saison}, région: Île-de-France.
 Demande: "${query}"
-Propose 8 recettes adaptées, produits de saison, pour 4 personnes par défaut.
+Propose 8 recettes adaptées, produits de saison, pour 4 personnes.
 Pour chaque: {"titre":"...","description":"1-2 phrases appétissantes","categorie":"Déjeuner|Dîner|Dessert","temps":30,"difficulte":"Facile|Moyen|Difficile","url":"https://www.marmiton.org/recettes/recette_[slug].aspx","emoji":"🍽️"}
-Tableau JSON de 8 objets, RIEN d'autre.`
+Tableau JSON de 8 objets UNIQUEMENT.`
         }],
       })
     });
@@ -74,9 +80,8 @@ Tableau JSON de 8 objets, RIEN d'autre.`
     const text = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) throw new Error('No JSON array in response');
-    const arr = JSON.parse(match[0]);
-    return res.status(200).json({ results: arr, source: 'claude-haiku' });
+    return res.status(200).json({ results: JSON.parse(match[0]), source: 'claude-haiku' });
   } catch (err) {
-    return res.status(500).json({ error: `Claude fallback failed: ${err.message}`, source: 'error' });
+    return res.status(500).json({ error: `Fallback failed: ${err.message}`, source: 'error' });
   }
 }
