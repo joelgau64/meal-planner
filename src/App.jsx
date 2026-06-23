@@ -91,7 +91,7 @@ function getUrl(p){return p?.url||null;}
 
 function parseRecette(page){
   const p=page.properties;
-  return{id:page.id,nom:getTitle(page),categorie:getSelect(p["Catégorie"]),temps:getNum(p["Temps de préparation"]),portions:getNum(p["Portions"])||DEFAULT_PORTIONS,ingredients:getText(p["Ingrédients"]),instructions:getText(p["Instructions"]),note:getSelect(p["Note"]),likes:getNum(p["Likes"]),dislikes:getNum(p["Dislikes"]),fois_cuisinee:getNum(p["Fois cuisinée"]),derniere_cuisson:getDate(p["Dernière cuisson"]),photo:getUrl(p["Photo"]),sourceUrl:getUrl(p["Source"])||getText(p["Source URL"])||""};
+  return{id:page.id,nom:getTitle(page),categorie:getSelect(p["Catégorie"]),temps:getNum(p["Temps de préparation"]),portions:getNum(p["Portions"])||DEFAULT_PORTIONS,ingredients:getText(p["Ingrédients"]),instructions:getText(p["Instructions"]),note:getSelect(p["Note"]),likes:getNum(p["Likes"]),dislikes:getNum(p["Dislikes"]),fois_cuisinee:getNum(p["Fois cuisinée"]),derniere_cuisson:getDate(p["Dernière cuisson"]),photo:getUrl(p["Photo"]),sourceUrl:getUrl(p["Source"])||getText(p["Source URL"])||"",commentaires:getText(p["Commentaires"])||""};
 }
 function parsePlanning(page){
   const p=page.properties;
@@ -355,6 +355,9 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
   const [cookingMode,setCookingMode]=useState(false);
   const [currentNote,setCurrentNote]=useState(recette.note||"***");
   const [savingNote,setSavingNote]=useState(false);
+  const [commentaires,setCommentaires]=useState(recette.commentaires||"");
+  const [savingComment,setSavingComment]=useState(false);
+  const [commentTimer,setCommentTimer]=useState(null);
   const score=(recette.likes||0)-(recette.dislikes||0);
 
   const parsedIngredients=parseIngredients(recette.ingredients);
@@ -474,8 +477,35 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
         </div>
       </div>
 
+      {/* Zone de notes personnelles */}
+      <div style={{marginTop:24,borderTop:"1px solid #E2E8F0",paddingTop:16}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <span style={{fontSize:11,fontWeight:700,color:"#C2622D",textTransform:"uppercase",letterSpacing:"0.1em"}}>📝 Notes personnelles</span>
+          {savingComment&&<span style={{fontSize:11,color:"#94A3B8"}}>Sauvegarde...</span>}
+          {!savingComment&&commentaires&&<span style={{fontSize:11,color:"#16A34A"}}>✓ Sauvegardé</span>}
+        </div>
+        <textarea
+          value={commentaires}
+          onChange={e=>{
+            const val=e.target.value;
+            setCommentaires(val);
+            // Autosave avec debounce 1.5s
+            if(commentTimer) clearTimeout(commentTimer);
+            const t=setTimeout(async()=>{
+              setSavingComment(true);
+              await notionUpdate(recette.id,{"Commentaires":nText(val)});
+              setSavingComment(false);
+            },1500);
+            setCommentTimer(t);
+          }}
+          placeholder="Ajoute tes astuces, variantes, retours d'expérience…"
+          rows={3}
+          style={{width:"100%",padding:"10px 12px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,fontSize:13,color:"#0F172A",fontFamily:"inherit",resize:"vertical",lineHeight:1.6,outline:"none"}}
+        />
+      </div>
+
       {/* Actions */}
-      <div style={{display:"flex",gap:8,marginTop:24,borderTop:"1px solid #E2E8F0",paddingTop:16,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
         <button onClick={()=>setCookingMode(true)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:13}}>
           🍳 Cuisiner
         </button>
