@@ -1002,7 +1002,8 @@ function PlanningTab({toast}){
     const updated=planning.map(p=>p.id===meal.id?{...p,fait:true}:p);
     setPlanning(updated);setCache("planning",updated);
     // Marquer comme fait dans Planning
-    await notionUpdate(meal.id,{"Acheté":nCheck(true)});
+    const updateRes=await notionUpdate(meal.id,{"Acheté":nCheck(true)});
+    if(updateRes?.object==="error") console.error("confirmCuisine error:",updateRes.message);
     // Mettre à jour Fois cuisinée + Dernière cuisson dans DB Recettes
     const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===(meal.recette||meal.repas));
     if(recetteData){
