@@ -1309,6 +1309,18 @@ function CoursesTab({toast}){
     notionUpdate(item.id,{"Acheté":nCheck(newVal)});
   };
 
+  const deleteAchetes=async()=>{
+    const toDelete=courses.filter(c=>c.achete);
+    if(!toDelete.length)return;
+    const updated=courses.filter(c=>!c.achete);
+    setCourses(updated);setCache("courses",updated);
+    // Archiver dans Notion en parallèle
+    await Promise.all(toDelete.map(c=>
+      fetch(`/api/notion?path=/v1/pages/${c.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})})
+    ));
+    toast(toDelete.length+" article"+(toDelete.length>1?"s":"")+" supprimé"+(toDelete.length>1?"s":"")+" ✓");
+  };
+
   const addItem=async()=>{
     setSaving(true);
     await notionCreate(DB_COURSES,{"Article":nTitle(form.article),"Catégorie":nSel(form.categorie),"Quantité":nText(form.quantite),"Semaine":nText(form.semaine),"Recette":nText(form.recette)});
@@ -1323,11 +1335,12 @@ function CoursesTab({toast}){
     :courses.reduce((acc,c)=>{const k=c.recette||"Sans recette";if(!acc[k])acc[k]=[];acc[k].push(c);return acc;},{});
 
   const total=courses.length;const done=courses.filter(c=>c.achete).length;
+  const hasDone=done>0;
 
   return(
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
           {total>0&&<><div style={{background:"#F1F5F9",borderRadius:20,height:6,width:120,overflow:"hidden"}}><div style={{background:"#4ADE80",height:"100%",width:`${(done/total)*100}%`,borderRadius:20,transition:"width 0.3s"}}/></div><span style={{fontSize:12,color:"#64748B"}}>{done}/{total}</span></>}
         </div>
         <div style={{display:"flex",gap:8}}>
@@ -1336,6 +1349,7 @@ function CoursesTab({toast}){
             <button onClick={()=>setSortBy("recette")} style={{padding:"7px 12px",background:sortBy==="recette"?"#C2622D":"transparent",border:"none",color:sortBy==="recette"?"#fff":"#64748B",cursor:"pointer",fontSize:11,fontWeight:600}}>Par recette</button>
           </div>
           <button onClick={()=>load(true)} style={{padding:"8px 10px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer"}}><Icon name="refresh" size={14}/></button>
+          {hasDone&&<button onClick={deleteAchetes} style={{padding:"8px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,color:"#DC2626",cursor:"pointer",fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>🗑 Supprimer les cochés ({done})</button>}
           <button onClick={()=>setShowForm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/>Ajouter</button>
         </div>
       </div>
