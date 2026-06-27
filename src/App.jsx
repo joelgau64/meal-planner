@@ -462,7 +462,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
         <button onClick={()=>setPortions(p=>p+1)} style={{width:28,height:28,borderRadius:"50%",background:"#E2E8F0",border:"none",color:"#0F172A",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
+      <div className="recipe-detail-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24}}>
         {/* Ingredients */}
         <div>
           <h5 style={{color:"#C2622D",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12,marginTop:0}}>Ingrédients</h5>
@@ -518,7 +518,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
       </div>
 
       {/* Actions */}
-      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:16}}>
         <button onClick={()=>setCookingMode(true)} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:700,fontSize:13}}>
           🍳 Cuisiner
         </button>
@@ -1786,28 +1786,37 @@ export default function App(){
         select option{background:#FFFFFF;}
         .tab-content{animation:slideUp 0.18s ease;}
         @media(max-width:640px){
+          /* Planning */
           .planning-grid{grid-template-columns:1fr!important;}
           .planning-grid>div{min-height:auto!important;flex-direction:row!important;display:flex!important;align-items:flex-start!important;gap:10px!important;}
-          .planning-grid>div>.day-header{min-width:48px!important;flex-shrink:0!important;}
-          .recipe-detail-modal{max-width:100%!important;width:100%!important;}
-          .courses-list{padding:0 8px!important;}
-          .modal-inner{border-radius:20px 20px 0 0!important;max-height:92vh!important;}
+          .planning-grid>div>.day-header{min-width:52px!important;flex-shrink:0!important;}
+          /* Modales */
+          .modal-inner{border-radius:20px 20px 0 0!important;max-height:92vh!important;position:fixed!important;bottom:0!important;left:0!important;right:0!important;margin:0!important;width:100%!important;max-width:100%!important;}
+          /* Navigation */
+          .top-nav{display:none!important;}
+          .app-header-title{display:block!important;}
+          .app-content{padding:12px 14px 80px!important;}
+          /* Recettes */
+          .recipe-card{padding:12px!important;}
+          .recipe-card-actions{gap:6px!important;}
+          /* Courses */
+          .course-item{padding:14px 16px!important;min-height:52px!important;}
+          .course-checkbox{width:24px!important;height:24px!important;}
+          /* Fiche recette */
+          .recipe-detail-grid{grid-template-columns:1fr!important;}
+          /* Typographie */
+          body{font-size:15px!important;}
         }
         @media(min-width:641px){
           .bottom-nav{display:none!important;}
           .top-nav{display:flex!important;}
           .app-content{padding:28px 24px!important;}
         }
-        @media(max-width:640px){
-          .top-nav{display:none!important;}
-          .app-header-title{display:block!important;}
-          .app-content{padding:16px 14px!important;}
-        }
       `}</style>
 
       {/* ── Header ── */}
       <div style={{borderBottom:"1px solid #E2E8F0",padding:"0 20px",background:"#FFFFFF",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
-        <div style={{maxWidth:980,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}}>
+        <div style={{maxWidth:980,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:52}}>
           {/* Logo */}
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:20}}>🍽️</span>
@@ -1844,7 +1853,7 @@ export default function App(){
       </div>
 
       {/* ── Contenu ── */}
-      <div className="app-content tab-content" key={tab} style={{maxWidth:980,margin:"0 auto",padding:"20px 20px"}}>
+      <div className="app-content tab-content" key={tab} style={{maxWidth:980,margin:"0 auto",padding:"20px 20px",paddingBottom:"calc(20px + env(safe-area-inset-bottom))"}}>
         {tab==="recettes"  &&<RecettesTab  toast={toast}/>}
         {tab==="planning"  &&<PlanningTab  toast={toast}/>}
         {tab==="courses"   &&<CoursesTab   toast={toast}/>}
@@ -1864,13 +1873,13 @@ export default function App(){
           return(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{
               flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-              gap:3,padding:"10px 4px 8px",border:"none",background:"transparent",
+              gap:3,padding:"12px 4px 10px",border:"none",background:"transparent",
               color:active?"#C2622D":"#94A3B8",cursor:"pointer",fontFamily:"inherit",
               position:"relative",transition:"color 0.15s",
             }}>
-              {active&&<div style={{position:"absolute",top:0,left:"20%",right:"20%",height:2,background:"#C2622D",borderRadius:"0 0 2px 2px"}}/>}
-              <span style={{fontSize:20,lineHeight:1}}>{t.emoji}</span>
-              <span style={{fontSize:10,fontWeight:active?700:500,letterSpacing:"0.01em"}}>{t.label}</span>
+              {active&&<div style={{position:"absolute",top:0,left:"15%",right:"15%",height:3,background:"#C2622D",borderRadius:"0 0 3px 3px"}}/>}
+              <span style={{fontSize:22,lineHeight:1,filter:active?"none":"grayscale(30%) opacity(0.6)"}}>{t.emoji}</span>
+              <span style={{fontSize:11,fontWeight:active?700:400,color:active?"#C2622D":"#94A3B8",letterSpacing:"0.01em"}}>{t.label}</span>
             </button>
           );
         })}
