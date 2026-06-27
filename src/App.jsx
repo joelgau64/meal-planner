@@ -191,10 +191,23 @@ function Spinner({label="Chargement..."}){
 }
 function Toast({message,onClose}){
   useEffect(()=>{const t=setTimeout(onClose,3000);return()=>clearTimeout(t);},[onClose]);
-  return(<div style={{position:"fixed",bottom:24,right:24,background:"#F1F5F9",color:"#0F172A",padding:"12px 20px",borderRadius:10,fontSize:13,fontWeight:500,zIndex:1000,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",display:"flex",alignItems:"center",gap:10}}><span style={{color:"#4ADE80"}}><Icon name="check" size={16}/></span>{message}</div>);
+  return(<div style={{position:"fixed",bottom:"calc(70px + env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",background:"#0F172A",color:"#FFFFFF",padding:"12px 20px",borderRadius:12,fontSize:13,fontWeight:500,zIndex:1000,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:10,whiteSpace:"nowrap",maxWidth:"90vw"}}><span style={{color:"#4ADE80"}}><Icon name="check" size={16}/></span>{message}</div>);
 }
 function Modal({title,onClose,children,wide,full}){
-  return(<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}><div style={{background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:16,width:"100%",maxWidth:full?900:wide?680:520,maxHeight:"90vh",overflow:"auto"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 24px",borderBottom:"1px solid #E2E8F0",position:"sticky",top:0,background:"#FFFFFF",zIndex:10}}><h3 style={{margin:0,fontSize:16,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display', serif"}}>{title}</h3><button onClick={onClose} style={{background:"none",border:"none",color:"#64748B",cursor:"pointer",padding:4}}><Icon name="close"/></button></div><div style={{padding:24}}>{children}</div></div></div>);
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:500,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+      <style>{`@media(min-width:641px){.modal-inner{align-self:center!important;border-radius:16px!important;max-height:90vh!important;}}`}</style>
+      <div className="modal-inner" onClick={e=>e.stopPropagation()}
+        style={{background:"#FFFFFF",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:full?900:wide?680:560,maxHeight:"92vh",overflow:"auto",paddingBottom:"env(safe-area-inset-bottom)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:"1px solid #F1F5F9",position:"sticky",top:0,background:"#FFFFFF",zIndex:10}}>
+          <div style={{width:40,height:4,borderRadius:2,background:"#E2E8F0",margin:"0 auto 0 auto",position:"absolute",left:"50%",transform:"translateX(-50%)",top:8}}/>
+          <h3 style={{margin:0,fontSize:15,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display', serif"}}>{title}</h3>
+          <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:"#64748B",cursor:"pointer",padding:6,borderRadius:8,display:"flex"}}><Icon name="close" size={16}/></button>
+        </div>
+        <div style={{padding:"16px 20px"}}>{children}</div>
+      </div>
+    </div>
+  );
 }
 function Field({label,children}){
   return(<div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{label}</label>{children}</div>);
@@ -1288,7 +1301,8 @@ function PlanningTab({toast}){
                   }}
                   style={{padding:"6px 12px",background:`${MOMENT_COLORS[m.moment]||"#64748B"}22`,border:`1px solid ${MOMENT_COLORS[m.moment]||"#64748B"}44`,borderRadius:20,fontSize:12,fontWeight:600,color:MOMENT_COLORS[m.moment]||"#94A3B8",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,touchAction:"none"}}>
                   <span onClick={e=>{e.stopPropagation();const r=recettes.find(x=>x.id===m.recette_id||x.nom===(m.recette||m.repas));if(r)setSelectedMealRecette(r);}} style={{cursor:"pointer",flex:1}}>
-                  <Icon name="drag" size={10}/>{m.recette||m.repas}
+                    <Icon name="drag" size={10}/>{m.recette||m.repas}
+                  </span>
                 </div>
               ))}
             </div>
@@ -1747,44 +1761,123 @@ export default function App(){
     },1000);
     return()=>clearInterval(interval);
   },[errorCount]);
-  const tabs=[{id:"recettes",label:"Recettes",icon:"book"},{id:"planning",label:"Planning",icon:"calendar"},{id:"courses",label:"Courses",icon:"cart"},{id:"discovery",label:"✨",icon:"sparkle"}];
+  const tabs=[
+    {id:"recettes",  label:"Recettes",  emoji:"📖"},
+    {id:"planning",  label:"Planning",  emoji:"📅"},
+    {id:"courses",   label:"Courses",   emoji:"🛒"},
+    {id:"discovery", label:"Découvrir", emoji:"✨"},
+  ];
+
+  const TAB_TITLES = {
+    recettes:  "Mes recettes",
+    planning:  "Planning",
+    courses:   "Liste de courses",
+    discovery: "Découvrir",
+  };
 
   return(
-    <div style={{minHeight:"100vh",background:"#F8FAFC",color:"#0F172A",fontFamily:"'DM Sans', system-ui, sans-serif"}}>
+    <div style={{minHeight:"100vh",background:"#F8FAFC",color:"#0F172A",fontFamily:"'DM Sans', system-ui, sans-serif",paddingBottom:"calc(64px + env(safe-area-inset-bottom))"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
         *{box-sizing:border-box;}
         @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+        @keyframes slideUp{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
         ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#F1F5F9;}::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:4px;}
         select option{background:#FFFFFF;}
+        .tab-content{animation:slideUp 0.18s ease;}
         @media(max-width:640px){
           .planning-grid{grid-template-columns:1fr!important;}
           .planning-grid>div{min-height:auto!important;flex-direction:row!important;display:flex!important;align-items:flex-start!important;gap:10px!important;}
           .planning-grid>div>.day-header{min-width:48px!important;flex-shrink:0!important;}
           .recipe-detail-modal{max-width:100%!important;width:100%!important;}
           .courses-list{padding:0 8px!important;}
+          .modal-inner{border-radius:20px 20px 0 0!important;max-height:92vh!important;}
+        }
+        @media(min-width:641px){
+          .bottom-nav{display:none!important;}
+          .top-nav{display:flex!important;}
+          .app-content{padding:28px 24px!important;}
+        }
+        @media(max-width:640px){
+          .top-nav{display:none!important;}
+          .app-header-title{display:block!important;}
+          .app-content{padding:16px 14px!important;}
         }
       `}</style>
-      <div style={{borderBottom:"1px solid #0F172A",padding:"0 24px",background:"#F8FAFC",position:"sticky",top:0,zIndex:100}}>
-        <div style={{maxWidth:980,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,padding:"16px 0"}}>
-            <span style={{fontSize:22}}>🍽️</span>
-            <span style={{fontSize:17,fontWeight:800,fontFamily:"'Playfair Display', serif",background:"linear-gradient(135deg, #F8FAFC, #94A3B8)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>Meal Planner</span>
+
+      {/* ── Header ── */}
+      <div style={{borderBottom:"1px solid #E2E8F0",padding:"0 20px",background:"#FFFFFF",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+        <div style={{maxWidth:980,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:56}}>
+          {/* Logo */}
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:20}}>🍽️</span>
+            <span style={{fontSize:15,fontWeight:800,fontFamily:"'Playfair Display', serif",color:"#0F172A"}}>Meal Planner</span>
           </div>
-          <nav style={{display:"flex",gap:2,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none",msOverflowStyle:"none",paddingBottom:2}}>
-            {tabs.map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 10px",borderRadius:8,whiteSpace:"nowrap",flexShrink:0,fontSize:12,background:tab===t.id?"#C2622D":"transparent",border:"none",color:tab===t.id?"#FFFFFF":"#64748B",fontWeight:tab===t.id?700:500,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}><Icon name={t.icon} size={15}/>{t.label}</button>))}
+
+          {/* Nav desktop */}
+          <nav className="top-nav" style={{display:"flex",gap:2}}>
+            {tabs.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)}
+                style={{display:"flex",alignItems:"center",gap:6,padding:"6px 14px",borderRadius:8,border:"none",
+                  background:tab===t.id?"#FFF7ED":"transparent",
+                  color:tab===t.id?"#C2622D":"#64748B",
+                  fontWeight:tab===t.id?700:500,fontSize:13,cursor:"pointer",fontFamily:"inherit",
+                  borderBottom:tab===t.id?"2px solid #C2622D":"2px solid transparent"}}>
+                <span>{t.emoji}</span>{t.label}
+              </button>
+            ))}
           </nav>
-          {errorCount>0&&<button onClick={()=>setShowErrorPanel(true)} style={{padding:"4px 8px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,color:"#DC2626",fontSize:11,cursor:"pointer",fontWeight:700}}>⚠️ {errorCount}</button>}
+
+          {/* Titre page courante sur mobile */}
+          <span className="app-header-title" style={{display:"none",fontSize:14,fontWeight:700,color:"#0F172A",position:"absolute",left:"50%",transform:"translateX(-50%)"}}>
+            {TAB_TITLES[tab]}
+          </span>
+
+          {/* Bouton erreurs */}
+          {errorCount>0&&(
+            <button onClick={()=>setShowErrorPanel(true)}
+              style={{padding:"4px 8px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,color:"#DC2626",fontSize:11,cursor:"pointer",fontWeight:700}}>
+              ⚠️ {errorCount}
+            </button>
+          )}
         </div>
       </div>
-      <div style={{maxWidth:980,margin:"0 auto",padding:"28px 24px"}}>
-        {tab==="recettes"&&<RecettesTab toast={toast}/>}
-        {tab==="planning"&&<PlanningTab toast={toast}/>}
-        {tab==="courses"&&<CoursesTab toast={toast}/>}
-        {tab==="discovery"&&<DiscoveryTab toast={toast}/>}
+
+      {/* ── Contenu ── */}
+      <div className="app-content tab-content" key={tab} style={{maxWidth:980,margin:"0 auto",padding:"20px 20px"}}>
+        {tab==="recettes"  &&<RecettesTab  toast={toast}/>}
+        {tab==="planning"  &&<PlanningTab  toast={toast}/>}
+        {tab==="courses"   &&<CoursesTab   toast={toast}/>}
+        {tab==="discovery" &&<DiscoveryTab toast={toast}/>}
       </div>
-      {toastMsg&&<Toast message={toastMsg} onClose={()=>setToastMsg(null)}/> }
-      {showErrorPanel&&<ErrorPanel onClose={()=>{setShowErrorPanel(false);setErrorCount(0);}}/> }
+
+      {/* ── Bottom tab bar (mobile only) ── */}
+      <nav className="bottom-nav" style={{
+        position:"fixed",bottom:0,left:0,right:0,zIndex:200,
+        background:"#FFFFFF",borderTop:"1px solid #F1F5F9",
+        display:"flex",
+        paddingBottom:"env(safe-area-inset-bottom)",
+        boxShadow:"0 -4px 20px rgba(0,0,0,0.06)",
+      }}>
+        {tabs.map(t=>{
+          const active=tab===t.id;
+          return(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+              gap:3,padding:"10px 4px 8px",border:"none",background:"transparent",
+              color:active?"#C2622D":"#94A3B8",cursor:"pointer",fontFamily:"inherit",
+              position:"relative",transition:"color 0.15s",
+            }}>
+              {active&&<div style={{position:"absolute",top:0,left:"20%",right:"20%",height:2,background:"#C2622D",borderRadius:"0 0 2px 2px"}}/>}
+              <span style={{fontSize:20,lineHeight:1}}>{t.emoji}</span>
+              <span style={{fontSize:10,fontWeight:active?700:500,letterSpacing:"0.01em"}}>{t.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {toastMsg&&<Toast message={toastMsg} onClose={()=>setToastMsg(null)}/>}
+      {showErrorPanel&&<ErrorPanel onClose={()=>{setShowErrorPanel(false);setErrorCount(0);}}/>}
     </div>
   );
 }
