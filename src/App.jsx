@@ -155,7 +155,7 @@ async function claudeVision(prompt,base64,mediaType){
 function parseJSON(text){try{return JSON.parse(text.replace(/```json\n?|```\n?/g,"").trim());}catch{return null;}}
 
 const RECIPE_JSON_PROMPT=`Retourne exactement ce JSON sans backticks:
-{"nom":"nom du plat en français","categorie":"Déjeuner","temps":30,"portions":4,"ingredients":"liste avec quantités en g/ml, UN ingrédient par ligne","instructions":"étapes numérotées","tags":[],"note":"***","sourceUrl":""}`;
+{"nom":"nom du plat en français","categorie":"Déjeuner","temps":30,"portions":4,"ingredients":"liste avec quantités en g/ml, UN ingrédient par ligne","instructions":"étapes numérotées","tags":[],"note":"","sourceUrl":""}`;
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const Icon=({name,size=18})=>{
@@ -353,7 +353,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
   const [portions,setPortions]=useState(basePortion);
   const [selectedIngredients,setSelectedIngredients]=useState(null);
   const [cookingMode,setCookingMode]=useState(false);
-  const [currentNote,setCurrentNote]=useState(recette.note||"***");
+  const [currentNote,setCurrentNote]=useState(recette.note||"");
   const [savingNote,setSavingNote]=useState(false);
   const [commentaires,setCommentaires]=useState(recette.commentaires||"");
   const [savingComment,setSavingComment]=useState(false);
@@ -838,9 +838,10 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
         if(!trimmed)continue;
         // Capture: "200g tomates" | "3 càs huile" | "500 g farine" | "2 oeufs"
         // Regex : capture quantité+unité puis nom — "g" unité seulement si suivi d'espace ou fin
-        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:kg|ml|L|l|cl|càs|càc|cup|oz|pièces?|g(?=\s|$))?(?:\s+(?:de |d'|du |des ))?)?(.+)/i);
-        const qty=parts?.[1]?.trim()||"";
-        const nom=(parts?.[2]?.trim()||trimmed).replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/,"").trim();
+        // Regex robuste : g unité seulement si suivi d'espace/fin, jamais au milieu d'un mot
+        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:kg|ml|L|l|cl|càs|càc|cup|oz|pièces?|g(?=[\s,]|$))?\s*(?:de |d'|du |des )?)?(.+)/i);
+        const qty=(parts?.[1]||"").trim();
+        const nom=(parts?.[2]||trimmed).trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
         if(!nom)continue;
         list.push({nom,qty,recette:recetteNom,categorie:guessCategory(nom),semaine:`Sem. du ${semaine}`});
       }
@@ -1023,6 +1024,7 @@ function PlanningTab({toast}){
   const [coursesSelection,setCoursesSelection]=useState([]);
   const [groupMode,setGroupMode]=useState("recette");
   const [selectedMealRecette,setSelectedMealRecette]=useState(null);
+  const [planningTargetFromDetail,setPlanningTargetFromDetail]=useState(null);
 
   const getWeekDates=(offset=0)=>{
     const now=new Date();const day=now.getDay();
@@ -1285,6 +1287,7 @@ function PlanningTab({toast}){
                     setDragItem(null);setDragOver(null);
                   }}
                   style={{padding:"6px 12px",background:`${MOMENT_COLORS[m.moment]||"#64748B"}22`,border:`1px solid ${MOMENT_COLORS[m.moment]||"#64748B"}44`,borderRadius:20,fontSize:12,fontWeight:600,color:MOMENT_COLORS[m.moment]||"#94A3B8",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,touchAction:"none"}}>
+                  <span onClick={e=>{e.stopPropagation();const r=recettes.find(x=>x.id===m.recette_id||x.nom===(m.recette||m.repas));if(r)setSelectedMealRecette(r);}} style={{cursor:"pointer",flex:1}}>
                   <Icon name="drag" size={10}/>{m.recette||m.repas}
                 </div>
               ))}
@@ -1293,13 +1296,22 @@ function PlanningTab({toast}){
         </div>
       )}
 
-      {selectedMealRecette&&(
+      {selectedMealRecette&&!planningTargetFromDetail&&(
         <RecipeDetailModal
           recette={selectedMealRecette}
           onClose={()=>setSelectedMealRecette(null)}
           toast={toast}
           onAddToCourses={()=>{}}
-          onAddToPlanning={()=>{}}
+          onAddToPlanning={(r,p,mode)=>{setPlanningTargetFromDetail({recette:r,portions:p,mode});}}
+        />
+      )}
+      {planningTargetFromDetail&&(
+        <AddToPlanningModal
+          recette={planningTargetFromDetail.recette}
+          portions={planningTargetFromDetail.portions}
+          mode={planningTargetFromDetail.mode}
+          toast={toast}
+          onClose={()=>{setPlanningTargetFromDetail(null);setSelectedMealRecette(null);}}
         />
       )}
 
@@ -1519,7 +1531,7 @@ function DiscoveryTab({toast}){
         "Nom":nTitle(recipe.nom),"Catégorie":nSel(recipe.categorie||card.categorie),
         "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
         "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
-        "Note":nSel(recipe.note||"***"),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
+        "Note":nSel(recipe.note||""),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
         "Source":nText(card.url||""),
         ...(card.image?{"Photo":nUrl(card.image)}:{}),
       }).then(r=>{
