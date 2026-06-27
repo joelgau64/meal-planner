@@ -1123,9 +1123,12 @@ function PlanningTab({toast}){
     const longPressTimer=useRef(null);
     const isDragging=useRef(false);
 
+    const touchStartPos=useRef(null);
+
     const handleTouchStart=(e)=>{
       isDragging.current=false;
       const touch=e.touches[0];
+      touchStartPos.current={x:touch.clientX,y:touch.clientY};
       longPressTimer.current=setTimeout(()=>{
         isDragging.current=true;
         const ghost=e.currentTarget.cloneNode(true);
@@ -1133,14 +1136,22 @@ function PlanningTab({toast}){
         document.body.appendChild(ghost);
         touchDragRef.current={item:meal,ghost,startX:touch.clientX,startY:touch.clientY};
         setDragItem(meal);
-      },300); // 300ms = long press
+      },400); // 400ms = long press plus sûr
     };
 
     const handleTouchMove=(e)=>{
-      if(!isDragging.current){clearTimeout(longPressTimer.current);return;}
-      if(!touchDragRef.current)return;
-      e.preventDefault();
       const touch=e.touches[0];
+      if(!isDragging.current){
+        // Annuler si mouvement trop important avant long press
+        if(touchStartPos.current){
+          const dx=Math.abs(touch.clientX-touchStartPos.current.x);
+          const dy=Math.abs(touch.clientY-touchStartPos.current.y);
+          if(dx>8||dy>8) clearTimeout(longPressTimer.current);
+        }
+        return;
+      }
+      if(!touchDragRef.current)return;
+      e.preventDefault(); // Bloque scroll ET pull-to-refresh pendant le drag
       touchDragRef.current.ghost.style.top=touch.clientY-30+"px";
       touchDragRef.current.ghost.style.left=touch.clientX-80+"px";
       const el=document.elementFromPoint(touch.clientX,touch.clientY);
@@ -1838,7 +1849,7 @@ export default function App(){
           </nav>
 
           {/* Titre page courante sur mobile */}
-          <span className="app-header-title" style={{display:"none",fontSize:14,fontWeight:700,color:"#0F172A",position:"absolute",left:"50%",transform:"translateX(-50%)"}}>
+          <span className="app-header-title" style={{display:"none",fontSize:14,fontWeight:700,color:"#0F172A",position:"absolute",left:"50%",top:"50%",transform:"translate(-50%,-50%)"}}>
             {TAB_TITLES[tab]}
           </span>
 
