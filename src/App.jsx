@@ -1032,6 +1032,23 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
 // Semaine type : 7 dîners + 2 déjeuners (samedi, dimanche)
 function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
   const [saving,setSaving]=useState(false);
+  const [discoveryPool,setDiscoveryPool]=useState([]);
+  const [discoveryLoading,setDiscoveryLoading]=useState(true);
+
+  // Charger ~6 recettes découverte (Spoonacular) pour injection à ~25%
+  useEffect(()=>{
+    const month=new Date().getMonth()+1;
+    const saison=month>=3&&month<=5?"printemps":month>=6&&month<=8?"été":month>=9&&month<=11?"automne":"hiver";
+    fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:`plat familial ${saison} facile`})})
+      .then(r=>r.json())
+      .then(d=>{
+        const pool=(d.results||[]).filter(r=>r.spoonacularId).slice(0,6)
+          .map(r=>({...r,isDiscovery:true,nom:r.titre}));
+        setDiscoveryPool(pool);
+      })
+      .catch(()=>{})
+      .finally(()=>setDiscoveryLoading(false));
+  },[]);
 
   // Slots de la semaine prochaine (lundi → dimanche)
   const buildSlots=()=>{
@@ -1075,9 +1092,28 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
     return slots.map((slot,i)=>({...slot,recette:sugg[i]||null,accepted:true}));
   });
 
+  // Quand le pool découverte arrive : remplacer ~25% des slots (jamais 2 consécutifs)
+  useEffect(()=>{
+    if(discoveryPool.length===0)return;
+    setAssignments(prev=>{
+      const count=Math.max(1,Math.round(prev.length*0.25));
+      const next=[...prev];
+      let placed=0;
+      for(let i=1;i<next.length&&placed<count&&placed<discoveryPool.length;i+=3){
+        next[i]={...next[i],recette:discoveryPool[placed]};
+        placed++;
+      }
+      return next;
+    });
+  },[discoveryPool]);
+
   const swapRecette=(idx)=>{
-    const used=new Set(assignments.filter(a=>a.recette).map(a=>a.recette.id));
-    const pool=recettes.filter(r=>!used.has(r.id)&&!["Dessert","Sauce & Marinade"].includes(r.categorie));
+    const used=new Set(assignments.filter(a=>a.recette).map(a=>a.recette.id||a.recette.spoonacularId));
+    const localPool=recettes.filter(r=>!used.has(r.id)&&!["Dessert","Sauce & Marinade"].includes(r.categorie));
+    const discPool=discoveryPool.filter(r=>!used.has(r.spoonacularId));
+    // 25% de chance de proposer une découverte si dispo
+    const useDiscovery=discPool.length>0&&Math.random()<0.25;
+    const pool=useDiscovery?discPool:localPool.length>0?localPool:discPool;
     if(pool.length===0){toast("Plus de recettes disponibles");return;}
     const next=pool[Math.floor(Math.random()*pool.length)];
     setAssignments(a=>a.map((x,i)=>i===idx?{...x,recette:next}:x));
@@ -1093,12 +1129,30 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
     let ok=0;
     for(const a of toCreate){
       try{
+        let recetteId=a.recette.id;
+        let recetteNom=a.recette.nom;
+        // Recette découverte → import Spoonacular dans Notion d'abord (0 crédit Claude)
+        if(a.recette.isDiscovery&&a.recette.spoonacularId){
+          const full=await fetch("/api/spoonacular-recipe?id="+a.recette.spoonacularId).then(r=>r.json());
+          if(full?.nom){
+            const created=await notionCreate(DB_RECETTES,{
+              "Nom":nTitle(full.nom),"Catégorie":nSel(full.categorie||"Dîner"),
+              "Temps de préparation":nNum(full.temps),"Portions":nNum(full.portions||DEFAULT_PORTIONS),
+              "Ingrédients":nText(full.ingredients||""),"Instructions":nText(full.instructions||""),
+              "Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
+              ...(full.source?{"Source":nUrl(full.source)}:{}),
+              ...(full.photo?{"Photo":nUrl(full.photo)}:{}),
+            });
+            recetteId=created?.object==="skip"?created.existing.id:created.id;
+            recetteNom=full.nom;
+          }
+        }
         await notionCreate(DB_PLANNING,{
-          "Repas":nTitle(a.recette.nom),
+          "Repas":nTitle(recetteNom),
           "Date":nDate(a.date),
           "Moment":nSel(a.moment),
-          "Recette":nText(a.recette.nom),
-          "Recette ID":nText(a.recette.id),
+          "Recette":nText(recetteNom),
+          "Recette ID":nText(recetteId||""),
           "Portions":nNum(a.recette.portions||DEFAULT_PORTIONS),
           "File d'attente":nCheck(false),
         });
@@ -1128,7 +1182,8 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
             </div>
             <span style={{flex:1,fontSize:13,color:"#0F172A",fontWeight:500,lineHeight:1.3}}>
               {a.recette?a.recette.nom:"—"}
-              {a.recette&&!a.recette.derniere_cuisson&&<span style={{fontSize:10,color:"#16A34A",marginLeft:6}}>jamais cuisinée</span>}
+              {a.recette?.isDiscovery&&<span style={{fontSize:10,color:"#7C3AED",marginLeft:6,background:"#F5F3FF",padding:"1px 6px",borderRadius:8}}>✨ Découverte</span>}
+              {a.recette&&!a.recette.isDiscovery&&!a.recette.derniere_cuisson&&<span style={{fontSize:10,color:"#16A34A",marginLeft:6}}>jamais cuisinée</span>}
             </span>
             <button onClick={()=>swapRecette(i)} title="Changer" style={{background:"none",border:"1px solid #E2E8F0",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#64748B",fontSize:13,flexShrink:0}}>↻</button>
           </div>
