@@ -1038,6 +1038,8 @@ function PlanningTab({toast}){
   const [groupMode,setGroupMode]=useState("recette");
   const [selectedMealRecette,setSelectedMealRecette]=useState(null);
   const [planningTargetFromDetail,setPlanningTargetFromDetail]=useState(null);
+  const [overdueMeals,setOverdueMeals]=useState(null); // null = pas encore vérifié, [] = rien
+  const [overdueProcessing,setOverdueProcessing]=useState({});
 
   const getWeekDates=(offset=0)=>{
     const now=new Date();const day=now.getDay();
@@ -1062,6 +1064,55 @@ function PlanningTab({toast}){
   },[weekOffset]);
 
   useEffect(()=>{load();},[load]);
+
+  // Détection des repas planifiés dans le passé non cuisinés (1x par session)
+  useEffect(()=>{
+    if(overdueMeals!==null||planning.length===0)return;
+    if(sessionStorage.getItem("overdueChecked"))return;
+    const todayStr=new Date().toISOString().split("T")[0];
+    const overdue=planning.filter(p=>!p.queue&&!p.fait&&p.date&&p.date<todayStr);
+    if(overdue.length>0){
+      setOverdueMeals(overdue);
+    } else {
+      setOverdueMeals([]);
+    }
+    sessionStorage.setItem("overdueChecked","1");
+  },[planning,overdueMeals]);
+
+  // Actions sur les repas en retard
+  const handleOverdueAction=async(meal,action)=>{
+    setOverdueProcessing(s=>({...s,[meal.id]:true}));
+    try{
+      if(action==="cancel"){
+        // Archiver l'entrée planning
+        await fetch(`/api/notion?path=/v1/pages/${meal.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
+        const updated=planning.filter(p=>p.id!==meal.id);
+        setPlanning(updated);setCache("planning",updated);
+      } else if(action==="done"){
+        // Marquer cuisiné + incrémenter compteur recette
+        await notionUpdate(meal.id,{"Cuisiné":nCheck(true)});
+        const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===(meal.recette||meal.repas));
+        if(recetteData){
+          await notionUpdate(recetteData.id,{
+            "Fois cuisinée":nNum((recetteData.fois_cuisinee||0)+1),
+            "Dernière cuisson":nDate(meal.date),
+          });
+        }
+        const updated=planning.map(p=>p.id===meal.id?{...p,fait:true}:p);
+        setPlanning(updated);setCache("planning",updated);
+      } else if(action==="requeue"){
+        // Remettre en file d'attente sans date
+        await notionUpdate(meal.id,{"File d'attente":nCheck(true),"Date":nDate(null)});
+        const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
+        setPlanning(updated);setCache("planning",updated);
+      }
+      // Retirer de la liste overdue
+      setOverdueMeals(m=>m.filter(x=>x.id!==meal.id));
+    }catch(e){
+      logError("handleOverdueAction",e,{meal:meal.repas,action});
+    }
+    setOverdueProcessing(s=>({...s,[meal.id]:false}));
+  };
 
   // Autocomplete
   useEffect(()=>{
@@ -1317,6 +1368,47 @@ function PlanningTab({toast}){
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup repas en retard */}
+      {overdueMeals&&overdueMeals.length>0&&(
+        <div style={{position:"fixed",inset:0,zIndex:2500,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div className="modal-inner" style={{background:"#FFFFFF",borderRadius:16,maxWidth:480,width:"100%",maxHeight:"80vh",overflow:"auto",padding:20}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+              <span style={{fontSize:24}}>⏰</span>
+              <h3 style={{margin:0,fontSize:17,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display',serif"}}>Repas non confirmés</h3>
+            </div>
+            <p style={{fontSize:13,color:"#64748B",marginTop:0,marginBottom:16}}>
+              {overdueMeals.length} repas planifié{overdueMeals.length>1?"s":""} dans le passé n'{overdueMeals.length>1?"ont":"a"} pas été marqué{overdueMeals.length>1?"s":""} comme cuisiné{overdueMeals.length>1?"s":""}.
+            </p>
+            {overdueMeals.map(meal=>(
+              <div key={meal.id} style={{border:"1px solid #E2E8F0",borderRadius:12,padding:"12px 14px",marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,gap:8}}>
+                  <span style={{fontSize:14,fontWeight:600,color:"#0F172A"}}>{meal.recette||meal.repas}</span>
+                  <span style={{fontSize:11,color:"#94A3B8",whiteSpace:"nowrap"}}>{new Date(meal.date+"T00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})}{meal.moment?` · ${meal.moment}`:""}</span>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button disabled={overdueProcessing[meal.id]} onClick={()=>handleOverdueAction(meal,"done")}
+                    style={{flex:1,padding:"8px 4px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,color:"#16A34A",fontSize:12,fontWeight:600,cursor:"pointer",opacity:overdueProcessing[meal.id]?0.5:1}}>
+                    ✓ Fait
+                  </button>
+                  <button disabled={overdueProcessing[meal.id]} onClick={()=>handleOverdueAction(meal,"requeue")}
+                    style={{flex:1,padding:"8px 4px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",fontSize:12,fontWeight:600,cursor:"pointer",opacity:overdueProcessing[meal.id]?0.5:1}}>
+                    ↩ File d'attente
+                  </button>
+                  <button disabled={overdueProcessing[meal.id]} onClick={()=>handleOverdueAction(meal,"cancel")}
+                    style={{flex:1,padding:"8px 4px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,color:"#DC2626",fontSize:12,fontWeight:600,cursor:"pointer",opacity:overdueProcessing[meal.id]?0.5:1}}>
+                    ✕ Annuler
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button onClick={()=>setOverdueMeals([])}
+              style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid #E2E8F0",borderRadius:10,color:"#64748B",fontSize:13,cursor:"pointer",marginTop:4}}>
+              Décider plus tard
+            </button>
           </div>
         </div>
       )}
