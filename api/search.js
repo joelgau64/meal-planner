@@ -19,30 +19,37 @@ export default async function handler(req, res) {
                  month >= 9 && month <= 11 ? 'automne' : 'hiver';
   const EMOJIS = ['🍽️','🥗','🍲','🥘','🍜','🥩','🐟','🥦','🍋','🫐','🥑','🍅'];
 
-  // ── 1. Google CSE (sites validés : marmiton, 750g, jow...) ─────────────────
-  if (googleKey && googleCX) {
-    try {
-      const q = encodeURIComponent(query);
-      const url = `https://www.googleapis.com/customsearch/v1?key=${googleKey}&cx=${googleCX}&q=${q}&num=9&lr=lang_fr&gl=fr`;
-      const r = await fetch(url);
+  // ── 1. Brave Search (sites validés FR, 2000 req/mois gratuit) ──────────────
+  const braveKey = process.env.BRAVE_SEARCH_API_KEY;
+  if (braveKey) {
+    const SITES = '(site:marmiton.org OR site:750g.com OR site:jow.fr OR site:cuisineaz.com)';
+    const braveSearch = async (q) => {
+      const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=10&country=fr&search_lang=fr`;
+      const r = await fetch(url, { headers: { 'Accept': 'application/json', 'X-Subscription-Token': braveKey } });
+      if (!r.ok) throw new Error(`Brave HTTP ${r.status}`);
       const d = await r.json();
-      if (!d.error && d.items?.length > 0) {
-        const results = d.items.map((item, i) => ({
-          titre: item.title.replace(/\s*[-|]\s*(Marmiton|750g|CuisineAZ|Jow|Chef Simon|Recette\.de)\s*$/gi, '').trim(),
-          url: item.link,
-          description: item.snippet,
-          source: item.displayLink,
+      return d.web?.results || [];
+    };
+    try {
+      // 1er essai : sites validés uniquement. Retry sans filtre si vide.
+      let items = await braveSearch(`recette ${query} ${SITES}`);
+      if (items.length === 0) items = await braveSearch(`recette ${query}`);
+      if (items.length > 0) {
+        const results = items.slice(0, 9).map((item, i) => ({
+          titre: item.title.replace(/\s*[-|:]\s*(Marmiton|750g|CuisineAZ|Jow|Cuisine AZ|Recette.*)$/gi, '').trim(),
+          url: item.url,
+          description: (item.description || '').replace(/<[^>]+>/g, ''),
+          source: item.meta_url?.hostname || 'web',
           categorie: 'Dîner',
           temps: null,
           difficulte: null,
           emoji: EMOJIS[i % EMOJIS.length],
-          image: item.pagemap?.cse_image?.[0]?.src || null,
+          image: item.thumbnail?.src || null,
         }));
-        return res.status(200).json({ results, source: 'google' });
+        return res.status(200).json({ results, source: 'brave' });
       }
-      if (d.error) console.warn('[search] Google CSE:', d.error.message);
     } catch (err) {
-      console.warn('[search] Google CSE exception:', err.message);
+      console.warn('[search] Brave:', err.message);
     }
   }
 
