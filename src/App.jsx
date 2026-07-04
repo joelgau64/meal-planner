@@ -1066,24 +1066,60 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
     return slots.sort((a,b)=>a.date.localeCompare(b.date)||( a.moment==="Déjeuner"?-1:1));
   };
 
-  // Scorer les recettes : privilégier non cuisinées récemment, bien notées
+  // Détection poisson / pâtes par mots-clés (nom + ingrédients)
+  const FISH_KW=/saumon|cabillaud|lieu|poisson|thon|crevette|truite|dorade|daurade|bar\b|colin|merlu|sole|maquereau|sardine|moule|fruits de mer|gambas|encornet|calamar/i;
+  const PASTA_KW=/p[âa]tes|spaghetti|penne|tagliatelle|lasagne|rigatoni|macaroni|linguine|fusilli|gnocchi|nouilles|orzo|coquillette|farfalle|ravioli|cannelloni/i;
+  const isFish=r=>FISH_KW.test((r.nom||"")+" "+(r.ingredients||""));
+  const isPasta=r=>PASTA_KW.test((r.nom||"")+" "+(r.ingredients||""));
+
+  // Scorer + sélection sous contraintes :
+  // - jamais 2x la même recette (garanti par le pool)
+  // - max 3 plats de pâtes / semaine
+  // - ≥1 poisson si aucun poisson cuisiné dans les 7 derniers jours
   const suggestRecettes=(count)=>{
-    const scored=[...recettes].map(r=>{
-      let score=0;
-      // Jamais cuisinée = priorité max
-      if(!r.derniere_cuisson)score+=100;
-      else{
-        const days=(Date.now()-new Date(r.derniere_cuisson).getTime())/(1000*3600*24);
-        score+=Math.min(days,90); // plus c'est vieux, mieux c'est (cap 90j)
+    const scored=[...recettes]
+      .filter(r=>!["Dessert","Sauce & Marinade"].includes(r.categorie))
+      .map(r=>{
+        let score=0;
+        if(!r.derniere_cuisson)score+=100;
+        else score+=Math.min((Date.now()-new Date(r.derniere_cuisson).getTime())/(1000*3600*24),90);
+        score+=((r.note||"").length)*5;
+        score+=(r.likes||0)*3-(r.dislikes||0)*5;
+        score+=Math.random()*15;
+        return {r,score};
+      }).sort((a,b)=>b.score-a.score);
+
+    // Sélection greedy avec cap pâtes
+    const picked=[];
+    let pastaCount=0;
+    for(const {r} of scored){
+      if(picked.length>=count)break;
+      if(isPasta(r)){
+        if(pastaCount>=3)continue;
+        pastaCount++;
       }
-      score+=((r.note||"").length)*5; // bonus étoiles
-      score+=(r.likes||0)*3-(r.dislikes||0)*5;
-      score+=Math.random()*15; // variété
-      return {r,score};
-    }).sort((a,b)=>b.score-a.score);
-    // Éviter les doublons de catégorie consécutifs, exclure desserts/sauces
-    const mains=scored.filter(({r})=>!["Dessert","Sauce & Marinade"].includes(r.categorie));
-    return mains.slice(0,count).map(({r})=>r);
+      picked.push(r);
+    }
+
+    // Règle poisson : si aucun poisson dans la sélection ET aucun cuisiné ces 7 derniers jours
+    const hasFishPicked=picked.some(isFish);
+    if(!hasFishPicked){
+      const weekAgo=new Date(Date.now()-7*24*3600*1000).toISOString().split("T")[0];
+      const fishRecently=planning.some(p=>p.fait&&p.date&&p.date>=weekAgo&&(()=>{
+        const r=recettes.find(x=>x.id===p.recette_id||x.nom===(p.recette||p.repas));
+        return r&&isFish(r);
+      })());
+      if(!fishRecently){
+        const bestFish=scored.find(({r})=>isFish(r)&&!picked.includes(r));
+        if(bestFish){
+          // Remplacer la moins bien scorée non-poisson
+          for(let i=picked.length-1;i>=0;i--){
+            if(!isFish(picked[i])){picked[i]=bestFish.r;break;}
+          }
+        }
+      }
+    }
+    return picked;
   };
 
   const slots=useRef(buildSlots()).current;
