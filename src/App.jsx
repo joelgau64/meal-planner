@@ -1509,13 +1509,13 @@ function PlanningTab({toast}){
 
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
           <button onClick={()=>setWeekOffset(w=>w-1)} style={{background:"#F1F5F9",border:"none",borderRadius:6,color:"#64748B",cursor:"pointer",padding:"6px 10px",transform:"rotate(180deg)"}}><Icon name="arrow" size={16}/></button>
           <span style={{fontSize:14,fontWeight:700,color:"#0F172A"}}>{weekLabel()}</span>
           <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:"#F1F5F9",border:"none",borderRadius:6,color:"#64748B",cursor:"pointer",padding:"6px 10px"}}><Icon name="arrow" size={16}/></button>
         </div>
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           <button onClick={()=>load(true)} style={{padding:"8px 10px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer"}}><Icon name="refresh" size={14}/></button>
           <button onClick={()=>{
             const today=new Date();today.setHours(0,0,0,0);
@@ -1529,15 +1529,15 @@ function PlanningTab({toast}){
             setCoursesSelection(unique.map(m=>({...m,selected:true})));
             setShowCoursesModal(true);
           }} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer",fontSize:13,fontWeight:600}}>
-            <Icon name="cart" size={15}/>Courses
+            <Icon name="cart" size={15}/><span className="btn-label">Courses</span>
           </button>
           <button onClick={shareWeekMenu} title="Partager le menu de la semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer",fontSize:13,fontWeight:600}}>
             📤
           </button>
           <button onClick={()=>setShowWeekWizard(true)} title="Planifier ma semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",cursor:"pointer",fontSize:13,fontWeight:600}}>
-            🗓️ Semaine
+            🗓️<span className="btn-label"> Semaine</span>
           </button>
-          <button onClick={()=>setShowForm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/>Ajouter</button>
+          <button onClick={()=>setShowForm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/><span className="btn-label">Ajouter</span></button>
         </div>
       </div>
 
@@ -2157,11 +2157,15 @@ export default function App(){
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
         *{box-sizing:border-box;}
+        html,body,#root{overflow-x:hidden;max-width:100vw;}
         @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
         @keyframes slideUp{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
         ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#F1F5F9;}::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:4px;}
         select option{background:#FFFFFF;}
         .tab-content{animation:slideUp 0.18s ease;}
+        @media(max-width:480px){
+          .btn-label{display:none;}
+        }
         @media(max-width:640px){
           /* Planning */
           .planning-grid{grid-template-columns:1fr!important;}
