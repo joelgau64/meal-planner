@@ -9,7 +9,8 @@ const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner","Snack"];
 const MOMENT_COLORS = {"Déjeuner":"#C2622D","Dîner":"#475569"};
 const CAT_COLORS = {"Fruits & Légumes":"#16A34A","Viandes & Poissons":"#DC2626","Produits laitiers":"#2563EB","Épicerie":"#EA580C","Surgelés":"#7C3AED","Boissons":"#0891B2","Autre":"#6B7280"};
 const EMPTY_FORM = {nom:"",categorie:"Dîner",temps:"",portions:4,ingredients:"",instructions:"",tags:[],note:"***",photoUrl:"",sourceUrl:""};
-const DEFAULT_PORTIONS = 4;
+const DEFAULT_PORTIONS = Number(localStorage.getItem("household_portions"))||4;
+function setHouseholdPortions(n){localStorage.setItem("household_portions",String(n));}
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 const cache = {recettes:null,planning:null,courses:null};
@@ -859,7 +860,30 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
         list.push({nom,qty,recette:recetteNom,categorie:guessCategory(nom),semaine:`Sem. du ${semaine}`});
       }
     }
-    return list;
+    // Agrégation : fusionner les ingrédients identiques (ex: 400g + 200g tomates = 600g)
+    const normalize=s=>s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/s$/,"").trim();
+    const merged={};
+    for(const item of list){
+      const key=normalize(item.nom);
+      if(!merged[key]){
+        merged[key]={...item,recettes:[item.recette]};
+      } else {
+        const m=merged[key];
+        if(!m.recettes.includes(item.recette))m.recettes.push(item.recette);
+        // Additionner si même unité (ex: "400g" + "200g")
+        const q1=m.qty.match(/^([\d,.\/]+)\s*(\S*)/);
+        const q2=item.qty.match(/^([\d,.\/]+)\s*(\S*)/);
+        if(q1&&q2&&q1[2]===q2[2]&&q1[2]!==""){
+          const sum=parseFloat(q1[1].replace(",","."))+parseFloat(q2[1].replace(",","."));
+          m.qty=`${Math.round(sum*100)/100}${q1[2]}`;
+        } else if(item.qty&&m.qty&&item.qty!==m.qty){
+          m.qty=`${m.qty} + ${item.qty}`;
+        } else if(item.qty&&!m.qty){
+          m.qty=item.qty;
+        }
+      }
+    }
+    return Object.values(merged).map(m=>({...m,recette:m.recettes.join(", ")}));
   };
 
   // Déduplication recettes par nom
@@ -1004,6 +1028,121 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
   );
 }
 
+// ── Assistant Planifier ma semaine ────────────────────────────────────────────
+// Semaine type : 7 dîners + 2 déjeuners (samedi, dimanche)
+function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
+  const [saving,setSaving]=useState(false);
+
+  // Slots de la semaine prochaine (lundi → dimanche)
+  const buildSlots=()=>{
+    const now=new Date();const day=now.getDay();
+    const monday=new Date(now);monday.setDate(now.getDate()-(day===0?6:day-1)+7); // semaine prochaine
+    const slots=[];
+    for(let i=0;i<7;i++){
+      const d=new Date(monday);d.setDate(monday.getDate()+i);
+      const dateStr=d.toISOString().split("T")[0];
+      slots.push({date:dateStr,moment:"Dîner",label:d.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric"})});
+      if(i===5||i===6){ // samedi, dimanche → déjeuner aussi
+        slots.push({date:dateStr,moment:"Déjeuner",label:d.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric"})});
+      }
+    }
+    return slots.sort((a,b)=>a.date.localeCompare(b.date)||( a.moment==="Déjeuner"?-1:1));
+  };
+
+  // Scorer les recettes : privilégier non cuisinées récemment, bien notées
+  const suggestRecettes=(count)=>{
+    const scored=[...recettes].map(r=>{
+      let score=0;
+      // Jamais cuisinée = priorité max
+      if(!r.derniere_cuisson)score+=100;
+      else{
+        const days=(Date.now()-new Date(r.derniere_cuisson).getTime())/(1000*3600*24);
+        score+=Math.min(days,90); // plus c'est vieux, mieux c'est (cap 90j)
+      }
+      score+=((r.note||"").length)*5; // bonus étoiles
+      score+=(r.likes||0)*3-(r.dislikes||0)*5;
+      score+=Math.random()*15; // variété
+      return {r,score};
+    }).sort((a,b)=>b.score-a.score);
+    // Éviter les doublons de catégorie consécutifs, exclure desserts/sauces
+    const mains=scored.filter(({r})=>!["Dessert","Sauce & Marinade"].includes(r.categorie));
+    return mains.slice(0,count).map(({r})=>r);
+  };
+
+  const slots=useRef(buildSlots()).current;
+  const [assignments,setAssignments]=useState(()=>{
+    const sugg=suggestRecettes(slots.length);
+    return slots.map((slot,i)=>({...slot,recette:sugg[i]||null,accepted:true}));
+  });
+
+  const swapRecette=(idx)=>{
+    const used=new Set(assignments.filter(a=>a.recette).map(a=>a.recette.id));
+    const pool=recettes.filter(r=>!used.has(r.id)&&!["Dessert","Sauce & Marinade"].includes(r.categorie));
+    if(pool.length===0){toast("Plus de recettes disponibles");return;}
+    const next=pool[Math.floor(Math.random()*pool.length)];
+    setAssignments(a=>a.map((x,i)=>i===idx?{...x,recette:next}:x));
+  };
+
+  const toggleSlot=(idx)=>{
+    setAssignments(a=>a.map((x,i)=>i===idx?{...x,accepted:!x.accepted}:x));
+  };
+
+  const confirm=async()=>{
+    setSaving(true);
+    const toCreate=assignments.filter(a=>a.accepted&&a.recette);
+    let ok=0;
+    for(const a of toCreate){
+      try{
+        await notionCreate(DB_PLANNING,{
+          "Repas":nTitle(a.recette.nom),
+          "Date":nDate(a.date),
+          "Moment":nSel(a.moment),
+          "Recette":nText(a.recette.nom),
+          "Recette ID":nText(a.recette.id),
+          "Portions":nNum(a.recette.portions||DEFAULT_PORTIONS),
+          "File d'attente":nCheck(false),
+        });
+        ok++;
+      }catch(e){logError("weekPlanner",e,{recette:a.recette.nom});}
+    }
+    setSaving(false);
+    toast(ok+" repas planifiés pour la semaine prochaine ✓");
+    onConfirm();
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:2500,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div className="modal-inner" style={{background:"#FFFFFF",borderRadius:16,maxWidth:520,width:"100%",maxHeight:"85vh",overflow:"auto",padding:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <h3 style={{margin:0,fontSize:17,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display',serif"}}>🗓️ Planifier ma semaine</h3>
+          <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",fontSize:18}}>✕</button>
+        </div>
+        <p style={{fontSize:12,color:"#64748B",marginTop:0,marginBottom:14}}>Semaine prochaine · 7 dîners + week-end déjeuners. Les recettes les moins cuisinées récemment sont proposées en premier. ↻ pour changer, décocher pour sauter.</p>
+
+        {assignments.map((a,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",background:a.accepted?"#FFFFFF":"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,marginBottom:6,opacity:a.accepted?1:0.5}}>
+            <input type="checkbox" checked={a.accepted} onChange={()=>toggleSlot(i)} style={{width:18,height:18,accentColor:"#C2622D",flexShrink:0}}/>
+            <div style={{width:64,flexShrink:0}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#C2622D",textTransform:"capitalize"}}>{a.label}</div>
+              <div style={{fontSize:10,color:"#94A3B8"}}>{a.moment}</div>
+            </div>
+            <span style={{flex:1,fontSize:13,color:"#0F172A",fontWeight:500,lineHeight:1.3}}>
+              {a.recette?a.recette.nom:"—"}
+              {a.recette&&!a.recette.derniere_cuisson&&<span style={{fontSize:10,color:"#16A34A",marginLeft:6}}>jamais cuisinée</span>}
+            </span>
+            <button onClick={()=>swapRecette(i)} title="Changer" style={{background:"none",border:"1px solid #E2E8F0",borderRadius:6,padding:"4px 8px",cursor:"pointer",color:"#64748B",fontSize:13,flexShrink:0}}>↻</button>
+          </div>
+        ))}
+
+        <button onClick={confirm} disabled={saving||assignments.filter(a=>a.accepted&&a.recette).length===0}
+          style={{width:"100%",padding:"12px",background:saving?"#E2E8F0":"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:saving?"wait":"pointer",marginTop:8}}>
+          {saving?"Planification en cours…":"✓ Planifier "+assignments.filter(a=>a.accepted&&a.recette).length+" repas"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PlanningTab({toast}){
   const [planning,setPlanning]=useState([]);
   const [recettes,setRecettes]=useState([]);
@@ -1038,8 +1177,9 @@ function PlanningTab({toast}){
   const [groupMode,setGroupMode]=useState("recette");
   const [selectedMealRecette,setSelectedMealRecette]=useState(null);
   const [planningTargetFromDetail,setPlanningTargetFromDetail]=useState(null);
-  const [overdueMeals,setOverdueMeals]=useState(null); // null = pas encore vérifié, [] = rien
+  const [overdueMeals,setOverdueMeals]=useState(null);
   const [overdueProcessing,setOverdueProcessing]=useState({});
+  const [showWeekWizard,setShowWeekWizard]=useState(false);
 
   const getWeekDates=(offset=0)=>{
     const now=new Date();const day=now.getDay();
@@ -1112,6 +1252,33 @@ function PlanningTab({toast}){
       logError("handleOverdueAction",e,{meal:meal.repas,action});
     }
     setOverdueProcessing(s=>({...s,[meal.id]:false}));
+  };
+
+  // Partage du menu de la semaine (WhatsApp / clipboard)
+  const shareWeekMenu=()=>{
+    const weekStart=weekDates[0].toISOString().split("T")[0];
+    const weekEnd=weekDates[6].toISOString().split("T")[0];
+    const meals=planning
+      .filter(p=>!p.queue&&p.date&&p.date>=weekStart&&p.date<=weekEnd)
+      .sort((a,b)=>a.date.localeCompare(b.date)||(a.moment==="Déjeuner"?-1:1));
+    if(meals.length===0){toast("Aucun repas planifié cette semaine");return;}
+    const lines=["🍽️ Menu de la semaine\n"];
+    let lastDate="";
+    for(const m of meals){
+      if(m.date!==lastDate){
+        lines.push("\n📅 "+new Date(m.date+"T00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"}));
+        lastDate=m.date;
+      }
+      lines.push(`  ${m.moment==="Déjeuner"?"☀️":"🌙"} ${m.recette||m.repas}${m.fait?" ✓":""}`);
+    }
+    lines.push("\n👨‍🍳 Recettes : https://meal-planner-psi-seven.vercel.app");
+    const text=lines.join("\n");
+    if(navigator.share){
+      navigator.share({text}).catch(()=>{});
+    } else {
+      navigator.clipboard.writeText(text);
+      toast("Menu copié — colle-le dans WhatsApp ✓");
+    }
   };
 
   // Autocomplete
@@ -1273,6 +1440,12 @@ function PlanningTab({toast}){
           }} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer",fontSize:13,fontWeight:600}}>
             <Icon name="cart" size={15}/>Courses
           </button>
+          <button onClick={shareWeekMenu} title="Partager le menu de la semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer",fontSize:13,fontWeight:600}}>
+            📤
+          </button>
+          <button onClick={()=>setShowWeekWizard(true)} title="Planifier ma semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",cursor:"pointer",fontSize:13,fontWeight:600}}>
+            🗓️ Semaine
+          </button>
           <button onClick={()=>setShowForm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/>Ajouter</button>
         </div>
       </div>
@@ -1370,6 +1543,16 @@ function PlanningTab({toast}){
             </div>
           </div>
         </div>
+      )}
+
+      {showWeekWizard&&(
+        <WeekPlannerWizard
+          recettes={recettes}
+          planning={planning}
+          toast={toast}
+          onClose={()=>setShowWeekWizard(false)}
+          onConfirm={()=>{setShowWeekWizard(false);setCache("planning",null);load(true);}}
+        />
       )}
 
       {/* Popup repas en retard */}
@@ -1851,7 +2034,7 @@ function ErrorPanel({onClose}){
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App(){
-  const [tab,setTab]=useState("recettes");
+  const [tab,setTab]=useState("planning");
   const [toastMsg,setToastMsg]=useState(null);
   const [showErrorPanel,setShowErrorPanel]=useState(false);
   const [errorCount,setErrorCount]=useState(0);
