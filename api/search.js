@@ -46,7 +46,7 @@ export default async function handler(req, res) {
           emoji: EMOJIS[i % EMOJIS.length],
           image: item.thumbnail?.src || null,
         }));
-        return res.status(200).json({ results, source: 'brave' });
+        return res.status(200).json({ results: results.map(r=>({...r,_origin:'brave'})), source: 'brave' });
       }
     } catch (err) {
       console.warn('[search] Brave:', err.message);
@@ -75,7 +75,7 @@ export default async function handler(req, res) {
           image: r.image || null,
           spoonacularId: r.id,
         }));
-        return res.status(200).json({ results, source: 'spoonacular' });
+        return res.status(200).json({ results: results.map(r=>({...r,_origin:'spoonacular'})), source: 'spoonacular' });
       }
     } catch (err) {
       console.warn('[search] Spoonacular:', err.message);
@@ -99,7 +99,7 @@ export default async function handler(req, res) {
     const text = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     const match = text.match(/\[[\s\S]*\]/);
     if (!match) throw new Error('No JSON');
-    return res.status(200).json({ results: JSON.parse(match[0]), source: 'claude-haiku' });
+    return res.status(200).json({ results: JSON.parse(match[0]).map(r=>({...r,_origin:'ai',url:''})), source: 'claude-haiku' });
   } catch (err) {
     return res.status(500).json({ error: err.message, source: 'error' });
   }
