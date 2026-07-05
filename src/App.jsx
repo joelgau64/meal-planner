@@ -5,7 +5,7 @@ const DB_PLANNING = "dc70bd98-0691-41b9-abfc-5bde68630995";
 const DB_COURSES = "35f5b3b5-095f-4998-a014-9a112807e711";
 
 const DAYS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
-const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner","Snack"];
+const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner"];
 const MOMENT_COLORS = {"Déjeuner":"#C2622D","Dîner":"#475569"};
 const CAT_COLORS = {"Fruits & Légumes":"#16A34A","Viandes & Poissons":"#DC2626","Produits laitiers":"#2563EB","Épicerie":"#EA580C","Surgelés":"#7C3AED","Boissons":"#0891B2","Autre":"#6B7280"};
 const EMPTY_FORM = {nom:"",categorie:"Dîner",temps:"",portions:4,ingredients:"",instructions:"",tags:[],note:"***",photoUrl:"",sourceUrl:""};
@@ -362,7 +362,9 @@ function CookingMode({recette,onClose}){
 }
 
 
-function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning}){
+function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete}){
+  const [confirmDelete,setConfirmDelete]=useState(false);
+  const [deleting,setDeleting]=useState(false);
   const basePortion=recette.portions||DEFAULT_PORTIONS;
   const [portions,setPortions]=useState(basePortion);
   const [selectedIngredients,setSelectedIngredients]=useState(null);
@@ -533,6 +535,34 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
           <Icon name="calendar" size={15}/> Planifier
         </button>
       </div>
+
+      {/* Suppression (utile pour doublons) */}
+      {onDelete&&(
+        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #F1F5F9"}}>
+          {!confirmDelete?(
+            <button onClick={()=>setConfirmDelete(true)} style={{width:"100%",padding:"8px",background:"transparent",border:"1px solid #FECACA",borderRadius:8,color:"#DC2626",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              🗑 Supprimer cette recette
+            </button>
+          ):(
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#64748B",flex:1}}>Supprimer définitivement ?</span>
+              <button onClick={()=>setConfirmDelete(false)} style={{padding:"8px 14px",background:"#F1F5F9",border:"none",borderRadius:8,color:"#475569",fontSize:12,fontWeight:600,cursor:"pointer"}}>Annuler</button>
+              <button disabled={deleting} onClick={async()=>{
+                setDeleting(true);
+                try{
+                  await fetch(`/api/notion?path=/v1/pages/${recette.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
+                  toast("Recette supprimée ✓");
+                  onDelete(recette.id);
+                  onClose();
+                }catch(e){logError("deleteRecette",e,{id:recette.id});toast("Erreur suppression");}
+                setDeleting(false);
+              }} style={{padding:"8px 14px",background:"#DC2626",border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",opacity:deleting?0.5:1}}>
+                {deleting?"...":"Supprimer"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -816,6 +846,7 @@ function RecettesTab({toast}){
           toast={toast}
           onAddToCourses={()=>{}}
           onAddToPlanning={(r,p,mode)=>setPlanningTarget({recette:r,portions:p,mode})}
+          onDelete={(id)=>{const upd=recettes.filter(x=>x.id!==id);setRecettes(upd);setCache("recettes",upd);setSelected(null);}}
         />
       )}
 
@@ -1299,6 +1330,8 @@ function PlanningTab({toast}){
   // Détection des repas planifiés dans le passé non cuisinés (1x par session)
   useEffect(()=>{
     if(overdueMeals!==null||planning.length===0)return;
+    const snooze=localStorage.getItem("overdueSnoozeUntil");
+    if(snooze&&new Date().toISOString().split("T")[0]<snooze)return;
     if(sessionStorage.getItem("overdueChecked"))return;
     const todayStr=new Date().toISOString().split("T")[0];
     const overdue=planning.filter(p=>!p.queue&&!p.fait&&p.date&&p.date<todayStr);
@@ -1679,10 +1712,22 @@ function PlanningTab({toast}){
                 </div>
               </div>
             ))}
-            <button onClick={()=>setOverdueMeals([])}
-              style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid #E2E8F0",borderRadius:10,color:"#64748B",fontSize:13,cursor:"pointer",marginTop:4}}>
-              Décider plus tard
-            </button>
+            <div style={{display:"flex",gap:8,marginTop:4}}>
+              <button onClick={()=>setOverdueMeals([])}
+                style={{flex:1,padding:"10px",background:"transparent",border:"1px solid #E2E8F0",borderRadius:10,color:"#64748B",fontSize:13,cursor:"pointer"}}>
+                Plus tard
+              </button>
+              <button onClick={()=>{
+                const d=new Date();const day=d.getDay();
+                const daysToMon=day===0?1:8-day; // prochain lundi
+                d.setDate(d.getDate()+daysToMon);
+                localStorage.setItem("overdueSnoozeUntil",d.toISOString().split("T")[0]);
+                setOverdueMeals([]);
+                toast("Rappel reporté à lundi");
+              }} style={{flex:1,padding:"10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,color:"#475569",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                💤 Jusqu'à lundi
+              </button>
+            </div>
           </div>
         </div>
       )}
