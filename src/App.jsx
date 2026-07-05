@@ -1928,6 +1928,10 @@ function DiscoveryTab({toast}){
   const startX=useRef(null);
   const cardRef=useRef(null);
   const EMOJIS=["🍽️","🥗","🍲","🥘","🍜","🥩","🐟","🥦","🍋","🫐"];
+  const decodeEntities=(s)=>{
+    if(!s)return s;
+    const t=document.createElement("textarea");t.innerHTML=s;return t.value;
+  };
 
   const inputStyle={width:"100%",padding:"12px 16px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:10,color:"#0F172A",fontSize:15,fontFamily:"inherit",outline:"none"};
   const btnP={padding:"12px 24px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",fontFamily:"inherit",width:"100%"};
@@ -1940,8 +1944,8 @@ function DiscoveryTab({toast}){
       const res=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:`recette ${prompt}`})});
       const data=await res.json();
       const arr=(data.results||[]).slice(0,9).map((r,i)=>({
-        titre:(r.titre||"").replace(/[-|]\s*(Marmiton|CuisineAZ|750g|Chef Simon|Cuisine AZ|Recette)\s*$/gi,"").trim(),
-        description:r.description,url:r.url,source:r.source,
+        titre:decodeEntities((r.titre||"").replace(/[-|]\s*(Marmiton|CuisineAZ|750g|Chef Simon|Cuisine AZ|Recette)\s*$/gi,"").trim()),
+        description:decodeEntities(r.description),url:r.url,source:r.source,
         categorie:r.categorie||"Dîner",temps:r.temps||null,difficulte:r.difficulte||null,
         emoji:r.emoji||EMOJIS[i%EMOJIS.length],
       }));
@@ -2035,6 +2039,11 @@ function DiscoveryTab({toast}){
         <button onClick={search} disabled={loading||!prompt.trim()} style={{...(loading||!prompt.trim()?btnD:btnP),marginTop:10}}>
           {loading?"✨ Recherche en cours… ("+cards.length+" trouvées)":"✨ Trouver des recettes"}
         </button>
+        {cards.length>0&&!loading&&(
+          <p style={{textAlign:"center",fontSize:12,color:"#94A3B8",margin:"8px 0 0"}}>
+            {cards.length} recette{cards.length>1?"s":""} trouvée{cards.length>1?"s":""} · {current} vue{current>1?"s":""}
+          </p>
+        )}
       </div>
 
       {/* Skeleton pendant chargement initial */}
