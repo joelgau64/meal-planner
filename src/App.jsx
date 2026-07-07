@@ -159,7 +159,15 @@ async function claudeVision(prompt,base64,mediaType){
   const data=await res.json();
   return parseJSON((data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join(""));
 }
-function parseJSON(text){try{return JSON.parse(text.replace(/```json\n?|```\n?/g,"").trim());}catch{return null;}}
+function parseJSON(text){
+  try{
+    const cleaned=text.replace(/```json\n?|```\n?/g,"").trim();
+    const start=cleaned.indexOf("{");
+    const end=cleaned.lastIndexOf("}");
+    if(start===-1||end===-1||end<start)return null;
+    return JSON.parse(cleaned.slice(start,end+1));
+  }catch{return null;}
+}
 
 const RECIPE_JSON_PROMPT=`Retourne exactement ce JSON sans backticks:
 {"nom":"nom du plat en français","categorie":"Déjeuner","temps":30,"portions":4,"ingredients":"liste avec quantités en g/ml, UN ingrédient par ligne","instructions":"étapes numérotées","tags":[],"note":"","sourceUrl":""}`;
