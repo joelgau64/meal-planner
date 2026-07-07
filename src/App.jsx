@@ -144,9 +144,15 @@ function guessCategory(name){
 async function claudeJSON(system,user,withSearch=false){
   const body={model:"claude-sonnet-4-5",max_tokens:1500,system,messages:[{role:"user",content:user}]};
   if(withSearch)body.tools=[{type:"web_search_20250305",name:"web_search"}];
-  const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  const data=await res.json();
-  return parseJSON((data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join(""));
+  try{
+    const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(!res.ok){console.error("claudeJSON error:",data);return null;}
+    return parseJSON((data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join(""));
+  }catch(err){
+    console.error("claudeJSON fetch/parse failed:",err);
+    return null;
+  }
 }
 async function claudeVision(prompt,base64,mediaType){
   const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:1500,system:"Tu es un chef cuisinier expert. Retourne UNIQUEMENT un JSON valide, sans backticks.",messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:mediaType,data:base64}},{type:"text",text:prompt}]}]})});
@@ -693,7 +699,11 @@ function AddRecipeModal({onClose,onSaved}){
     if(!url)return;
     setAnalyzing(true);
     const result=await claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",`Visite cette URL et extrais la recette en français avec mesures métriques, ingrédients un par ligne: ${url}\n\n${RECIPE_JSON_PROMPT}`,true);
-    if(result)setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,sourceUrl:url}));
+    if(result){
+      setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,sourceUrl:url}));
+    }else{
+      alert("Impossible d'extraire la recette depuis cette URL (timeout ou erreur). Réessaie, ou utilise la saisie manuelle.");
+    }
     setAnalyzing(false);
   };
 
