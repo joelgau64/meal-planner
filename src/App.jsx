@@ -109,7 +109,8 @@ function parseIngredients(text){
   return text.split(/\n|,(?=\s*\d|\s*[A-ZÀ-Ö])/g)
     .map(s=>s.trim()).filter(Boolean)
     .map(line=>{
-      const match=line.match(/^([\d.,/]+)\s*(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)?\s*(.+)/i);
+      // \b après le groupe unité : empêche "g" de "gousse"/"gingembre" ou "l" de "laitue" d'être happés comme unité
+      const match=line.match(/^([\d.,/]+)\s*(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)?\b\s*(.+)/i);
       if(match){
         const qty=parseFloat(match[1].replace(',','.'));
         return{original:line,qty,unit:match[2]||"",name:match[3].trim(),scalable:!isNaN(qty)};
@@ -902,7 +903,7 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
         // Capture: "200g tomates" | "3 càs huile" | "500 g farine" | "2 oeufs"
         // Regex : capture quantité+unité puis nom — "g" unité seulement si suivi d'espace ou fin
         // Regex robuste : g unité seulement si suivi d'espace/fin, jamais au milieu d'un mot
-        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:kg|ml|L|l|cl|càs|càc|cup|oz|pièces?|g(?=[\s,]|$))?\s*(?:de |d'|du |des )?)?(.+)/i);
+        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:(?:kg|ml|L|l|cl|càs|càc|cup|oz|pièces?|g)(?=[\s,]|$))?\s*(?:de |d'|du |des )?)?(.+)/i);
         const qty=(parts?.[1]||"").trim();
         const nom=(parts?.[2]||trimmed).trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
         if(!nom)continue;
@@ -1824,6 +1825,7 @@ function CoursesTab({toast}){
   const [showForm,setShowForm]=useState(false);
   const [sortBy,setSortBy]=useState("categorie"); // "categorie" | "recette"
   const [form,setForm]=useState({article:"",categorie:"Épicerie",quantite:"",semaine:"",recette:""});
+  const [categorieTouched,setCategorieTouched]=useState(false); // true dès que l'utilisateur choisit la catégorie à la main
   const [saving,setSaving]=useState(false);
   const [showCoursesModal,setShowCoursesModal]=useState(false);
   const [coursesSelection,setCoursesSelection]=useState([]);
@@ -1863,6 +1865,7 @@ function CoursesTab({toast}){
     await notionCreate(DB_COURSES,{"Article":nTitle(form.article),"Catégorie":nSel(form.categorie),"Quantité":nText(form.quantite),"Semaine":nText(form.semaine),"Recette":nText(form.recette)});
     toast("Article ajouté ✓");setSaving(false);setShowForm(false);
     setForm({article:"",categorie:"Épicerie",quantite:"",semaine:"",recette:""});
+    setCategorieTouched(false);
     setCache("courses",null);load(true);
   };
 
@@ -1918,9 +1921,12 @@ function CoursesTab({toast}){
 
       {showForm&&(
         <Modal title="Ajouter un article" onClose={()=>setShowForm(false)}>
-          <Field label="Article"><input style={inputStyle} value={form.article} onChange={e=>setForm(f=>({...f,article:e.target.value}))} placeholder="Ex: Tomates"/></Field>
+          <Field label="Article"><input style={inputStyle} value={form.article} onChange={e=>{
+            const val=e.target.value;
+            setForm(f=>({...f,article:val,categorie:categorieTouched?f.categorie:guessCategory(val)}));
+          }} placeholder="Ex: Tomates"/></Field>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <Field label="Catégorie"><select style={inputStyle} value={form.categorie} onChange={e=>setForm(f=>({...f,categorie:e.target.value}))}>{Object.keys(CAT_COLORS).map(c=><option key={c}>{c}</option>)}</select></Field>
+            <Field label="Catégorie"><select style={inputStyle} value={form.categorie} onChange={e=>{setCategorieTouched(true);setForm(f=>({...f,categorie:e.target.value}));}}>{Object.keys(CAT_COLORS).map(c=><option key={c}>{c}</option>)}</select></Field>
             <Field label="Quantité"><input style={inputStyle} value={form.quantite} onChange={e=>setForm(f=>({...f,quantite:e.target.value}))} placeholder="500g..."/></Field>
           </div>
           <Field label="Recette (optionnel)"><input style={inputStyle} value={form.recette} onChange={e=>setForm(f=>({...f,recette:e.target.value}))} placeholder="Ex: Poulet rôti"/></Field>
