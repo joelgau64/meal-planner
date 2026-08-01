@@ -109,8 +109,12 @@ function parseIngredients(text){
   return text.split(/\n|,(?=\s*\d|\s*[A-ZÀ-Ö])/g)
     .map(s=>s.trim()).filter(Boolean)
     .map(line=>{
-      // \b après le groupe unité : empêche "g" de "gousse"/"gingembre" ou "l" de "laitue" d'être happés comme unité
-      const match=line.match(/^([\d.,/]+)\s*(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)?\b\s*(.+)/i);
+      // Lookahead (pas \b) après le groupe unité : \b traite "." comme non-mot, donc après
+      // "c.à.s." suivi d'un espace il n'y a pas de frontière -> le point final restait collé
+      // au nom ("gousses" ok, mais "c.à.s." laissait ". huile d'olive"). Le lookahead est
+      // imbriqué dans le groupe optionnel pour ne s'appliquer que si une unité matche vraiment,
+      // sinon "2 gousses d'ail" échouerait aussi (rien après "2 " n'est espace/virgule/fin).
+      const match=line.match(/^([\d.,/]+)\s*(?:(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)(?=\s|,|$))?\s*(.+)/i);
       if(match){
         const qty=parseFloat(match[1].replace(',','.'));
         return{original:line,qty,unit:match[2]||"",name:match[3].trim(),scalable:!isNaN(qty)};

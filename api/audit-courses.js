@@ -19,7 +19,7 @@ function parseIngredients(text) {
   return text.split(/\n|,(?=\s*\d|\s*[A-ZÀ-Ö])/g)
     .map(s => s.trim()).filter(Boolean)
     .map(line => {
-      const match = line.match(/^([\d.,\/]+)\s*(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)?\b\s*(.+)/i);
+      const match = line.match(/^([\d.,\/]+)\s*(?:(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)(?=\s|,|$))?\s*(.+)/i);
       if (match) {
         return { name: match[3].trim() };
       }
