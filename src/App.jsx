@@ -1593,7 +1593,7 @@ function PlanningTab({toast}){
           <button onClick={()=>setShowWeekWizard(true)} title="Planifier ma semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",cursor:"pointer",fontSize:13,fontWeight:600}}>
             🗓️<span className="btn-label"> Semaine</span>
           </button>
-          <button onClick={()=>setShowForm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/><span className="btn-label">Ajouter</span></button>
+          <button onClick={()=>{setForm(f=>({...f,date:"",queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/><span className="btn-label">Ajouter</span></button>
         </div>
       </div>
 
@@ -1611,9 +1611,12 @@ function PlanningTab({toast}){
                   onDrop={()=>handleDrop(dropKey,"Dîner")}
                   data-dropzone={dropKey}
                   style={{background:dragOver===dropKey?"#FEF3C7":today?"#FFF7ED":"#FFFFFF",border:`1px solid ${dragOver===dropKey?"#C2622D":today?"#C2622D":"#E2E8F0"}`,borderRadius:10,padding:8,minHeight:120,opacity:past?0.75:1,transition:"all 0.15s"}}>
-                  <div className="day-header" style={{marginBottom:6}}>
-                    <div style={{fontSize:10,fontWeight:600,color:today?"#C2622D":"#64748B",textTransform:"uppercase"}}>{DAYS[i].slice(0,3)}</div>
-                    <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#0F172A",fontFamily:"'Playfair Display', serif"}}>{date.getDate()}</div>
+                  <div className="day-header" style={{marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:600,color:today?"#C2622D":"#64748B",textTransform:"uppercase"}}>{DAYS[i].slice(0,3)}</div>
+                      <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#0F172A",fontFamily:"'Playfair Display', serif"}}>{date.getDate()}</div>
+                    </div>
+                    <button onClick={()=>{setForm(f=>({...f,date:dropKey,queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} title="Ajouter un repas ce jour" style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:6,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#C2622D",fontSize:16,lineHeight:1,padding:0,flexShrink:0}}>+</button>
                   </div>
                   {meals.length===0&&<div style={{fontSize:10,color:"#94A3B8",textAlign:"center",paddingTop:8}}>—</div>}
                   {meals.map((m,j)=><MealChip key={j} meal={m}
