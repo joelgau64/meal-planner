@@ -309,18 +309,48 @@ function StepTimer({seconds,stepIdx}){
   const [running,setRunning]=useState(false);
   const [done,setDone]=useState(false);
   const intervalRef=useRef(null);
+  const endTimeRef=useRef(null);   // timestamp (ms) de fin — source de vérité
+  const doneRef=useRef(false);
+
+  // Recalcule le restant depuis l'horloge réelle (résiste à l'écran éteint)
+  const tick=()=>{
+    if(endTimeRef.current==null)return;
+    const left=Math.max(0,Math.round((endTimeRef.current-Date.now())/1000));
+    setRemaining(left);
+    if(left<=0&&!doneRef.current){
+      doneRef.current=true;
+      clearInterval(intervalRef.current);
+      setRunning(false);setDone(true);playAlarm();
+    }
+  };
+
   useEffect(()=>{
-    if(running&&remaining>0){
-      intervalRef.current=setInterval(()=>{
-        setRemaining(r=>{
-          if(r<=1){clearInterval(intervalRef.current);setRunning(false);setDone(true);playAlarm();return 0;}
-          return r-1;
-        });
-      },1000);
+    if(running){
+      // (re)poser l'échéance si pas déjà fixée
+      if(endTimeRef.current==null) endTimeRef.current=Date.now()+remaining*1000;
+      intervalRef.current=setInterval(tick,1000);
+      tick();
     }
     return()=>clearInterval(intervalRef.current);
   },[running]);
-  const reset=()=>{setRemaining(seconds);setRunning(false);setDone(false);clearInterval(intervalRef.current);};
+
+  // Au retour d'écran/onglet : recalcul immédiat (rattrape le temps écoulé hors-ligne)
+  useEffect(()=>{
+    const onVis=()=>{ if(document.visibilityState==="visible"&&running) tick(); };
+    document.addEventListener("visibilitychange",onVis);
+    return()=>document.removeEventListener("visibilitychange",onVis);
+  },[running]);
+
+  const toggle=()=>{
+    setRunning(r=>{
+      const next=!r;
+      if(next){ endTimeRef.current=Date.now()+remaining*1000; }
+      else { endTimeRef.current=null; clearInterval(intervalRef.current); } // pause: fige le restant
+      return next;
+    });
+  };
+
+  const reset=()=>{endTimeRef.current=null;doneRef.current=false;setRemaining(seconds);setRunning(false);setDone(false);clearInterval(intervalRef.current);};
   const fmt=(s)=>{const h=Math.floor(s/3600);const m=Math.floor((s%3600)/60);const sec=s%60;return h>0?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`;};
   const pct=((seconds-remaining)/seconds)*100;
   return(
@@ -328,7 +358,7 @@ function StepTimer({seconds,stepIdx}){
       <div style={{display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>{done?"✅":running?"⏱️":"⏱"}</span>
         <span style={{fontSize:20,fontWeight:700,fontFamily:"monospace",color:done?"#065F46":running?"#92400E":"#475569",flex:1}}>{fmt(remaining)}</span>
-        {!done&&<button onClick={()=>setRunning(r=>!r)} style={{padding:"4px 12px",background:running?"#FCD34D":"#C2622D",border:"none",borderRadius:6,color:running?"#92400E":"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>{running?"Pause":"Démarrer"}</button>}
+        {!done&&<button onClick={toggle} style={{padding:"4px 12px",background:running?"#FCD34D":"#C2622D",border:"none",borderRadius:6,color:running?"#92400E":"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>{running?"Pause":"Démarrer"}</button>}
         <button onClick={reset} style={{padding:"4px 8px",background:"none",border:"1px solid #E2E8F0",borderRadius:6,color:"#94A3B8",fontSize:11,cursor:"pointer"}}>↺</button>
       </div>
       <div style={{marginTop:8,height:4,background:"#E2E8F0",borderRadius:2,overflow:"hidden"}}>
