@@ -17,10 +17,39 @@ export default async function handler(req, res) {
     if (!r.ok) return res.status(502).json({ error: `Page inaccessible (HTTP ${r.status})` });
     const html = await r.text();
 
-    // Image de la recette : og:image (photo officielle de la page), avant nettoyage du HTML
-    const imgMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+    // Image de la recette, par ordre de fiabilité décroissante (avant nettoyage du HTML) :
+    // 1) og:image  2) twitter:image  3) JSON-LD schema.org Recipe/ImageObject (très courant
+    // sur les plugins de recette WordPress, parfois seule source quand il n'y a pas d'og:image)
+    let image = null;
+    const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
       || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
-    let image = imgMatch?.[1] || null;
+    image = ogMatch?.[1] || null;
+
+    if (!image) {
+      const twMatch = html.match(/<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i)
+        || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image(?::src)?["']/i);
+      image = twMatch?.[1] || null;
+    }
+
+    if (!image) {
+      const ldBlocks = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+      for (const block of ldBlocks) {
+        try {
+          const data = JSON.parse(block[1].trim());
+          const items = Array.isArray(data) ? data : (data['@graph'] || [data]);
+          for (const item of items) {
+            const types = [].concat(item?.['@type'] || []);
+            if (!types.some(t => /recipe/i.test(String(t)))) continue;
+            let img = item.image;
+            if (Array.isArray(img)) img = img[0];
+            if (img && typeof img === 'object') img = img.url || img['@id'] || null;
+            if (typeof img === 'string' && img.trim()) { image = img.trim(); break; }
+          }
+        } catch { /* bloc JSON-LD invalide ou non pertinent, on ignore */ }
+        if (image) break;
+      }
+    }
+
     if (image && image.startsWith('//')) image = 'https:' + image;
     if (image && image.startsWith('/')) { try { image = new URL(image, url).href; } catch { /* ignore */ } }
 
