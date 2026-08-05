@@ -408,7 +408,7 @@ function CookingMode({recette,onClose}){
 }
 
 
-function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete}){
+function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete,onUpdate}){
   const [confirmDelete,setConfirmDelete]=useState(false);
   const [deleting,setDeleting]=useState(false);
   const basePortion=recette.portions||DEFAULT_PORTIONS;
@@ -420,7 +420,44 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
   const [commentaires,setCommentaires]=useState(recette.commentaires||"");
   const [savingComment,setSavingComment]=useState(false);
   const [commentTimer,setCommentTimer]=useState(null);
+  const [editing,setEditing]=useState(false);
+  const [editForm,setEditForm]=useState(null);
+  const [savingEdit,setSavingEdit]=useState(false);
   const score=(recette.likes||0)-(recette.dislikes||0);
+
+  const startEdit=()=>{
+    setEditForm({
+      nom:recette.nom||"",categorie:recette.categorie||"Dîner",temps:recette.temps||"",
+      portions:recette.portions||DEFAULT_PORTIONS,ingredients:recette.ingredients||"",
+      instructions:recette.instructions||"",note:recette.note||"***",
+      photoUrl:recette.photo||"",sourceUrl:recette.sourceUrl||"",
+    });
+    setEditing(true);
+  };
+
+  const saveEdit=async()=>{
+    if(!editForm?.nom)return;
+    setSavingEdit(true);
+    const r=await notionUpdate(recette.id,{
+      "Nom":nTitle(editForm.nom),"Catégorie":nSel(editForm.categorie),"Temps de préparation":nNum(editForm.temps),
+      "Portions":nNum(editForm.portions||DEFAULT_PORTIONS),"Ingrédients":nText(editForm.ingredients),
+      "Instructions":nText(editForm.instructions),"Note":nSel(editForm.note),
+      "Photo":nUrl(editForm.photoUrl||""),"Source":nUrl(editForm.sourceUrl||""),
+    });
+    setSavingEdit(false);
+    if(!r||r.object==="error"){
+      logError("RecipeDetailModal.saveEdit",new Error(r?.message||"Échec de la mise à jour Notion"),{id:recette.id});
+      toast("Erreur : modifications non enregistrées ✕");
+      return;
+    }
+    setCache("recettes",null);
+    const updated={...recette,nom:editForm.nom,categorie:editForm.categorie,temps:Number(editForm.temps)||0,
+      portions:Number(editForm.portions)||DEFAULT_PORTIONS,ingredients:editForm.ingredients,instructions:editForm.instructions,
+      note:editForm.note,photo:editForm.photoUrl||null,sourceUrl:editForm.sourceUrl||""};
+    onUpdate?.(updated);
+    setEditing(false);
+    toast("Recette modifiée ✓");
+  };
 
   const parsedIngredients=parseIngredients(recette.ingredients);
   const scaled=scaleIngredients(parsedIngredients,basePortion,portions);
@@ -435,6 +472,15 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
   };
 
   if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)}/>;
+
+  if(editing){
+    return(
+      <Modal title={"Modifier : "+recette.nom} onClose={()=>setEditing(false)} wide>
+        <RecipeForm form={editForm} setForm={setEditForm} saving={savingEdit} onSave={saveEdit} analyzing={false}/>
+        <button onClick={()=>setEditing(false)} disabled={savingEdit} style={{width:"100%",marginTop:8,padding:"10px",background:"transparent",border:"1px solid #E2E8F0",borderRadius:10,color:"#64748B",cursor:"pointer",fontFamily:"inherit",fontSize:14}}>Annuler</button>
+      </Modal>
+    );
+  }
 
   if(selectedIngredients){
     return(
@@ -579,6 +625,9 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
         </button>
         <button onClick={()=>onAddToPlanning(recette,portions,"date")} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",cursor:"pointer",fontWeight:600,fontSize:13}}>
           <Icon name="calendar" size={15}/> Planifier
+        </button>
+        <button onClick={startEdit} style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"10px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",cursor:"pointer",fontWeight:600,fontSize:13}}>
+          <Icon name="edit" size={15}/> Modifier la recette
         </button>
       </div>
 
@@ -907,6 +956,7 @@ function RecettesTab({toast}){
           onAddToCourses={()=>{}}
           onAddToPlanning={(r,p,mode)=>setPlanningTarget({recette:r,portions:p,mode})}
           onDelete={(id)=>{const upd=recettes.filter(x=>x.id!==id);setRecettes(upd);setCache("recettes",upd);setSelected(null);}}
+          onUpdate={(updated)=>{const upd=recettes.map(x=>x.id===updated.id?updated:x);setRecettes(upd);setCache("recettes",upd);setSelected(updated);}}
         />
       )}
 
@@ -1802,6 +1852,7 @@ function PlanningTab({toast}){
           toast={toast}
           onAddToCourses={()=>{}}
           onAddToPlanning={(r,p,mode)=>{setPlanningTargetFromDetail({recette:r,portions:p,mode});}}
+          onUpdate={(updated)=>setSelectedMealRecette(updated)}
         />
       )}
       {planningTargetFromDetail&&(
