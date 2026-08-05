@@ -2393,6 +2393,29 @@ export default function App(){
   const [errorCount,setErrorCount]=useState(0);
   const toast=msg=>setToastMsg(msg);
 
+  // Garder l'écran allumé dans toute l'app (Wake Lock API)
+  useEffect(()=>{
+    let wakeLock=null;
+    let released=false;
+    const acquire=async()=>{
+      if(!("wakeLock" in navigator))return;
+      try{
+        wakeLock=await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release",()=>{wakeLock=null;});
+      }catch(e){/* refusé (batterie faible, onglet caché) — silencieux */}
+    };
+    const onVisibility=()=>{
+      if(document.visibilityState==="visible"&&!released) acquire();
+    };
+    acquire();
+    document.addEventListener("visibilitychange",onVisibility);
+    return()=>{
+      released=true;
+      document.removeEventListener("visibilitychange",onVisibility);
+      if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null;}
+    };
+  },[]);
+
   // Surveiller les nouvelles erreurs
   useEffect(()=>{
     const interval=setInterval(()=>{
