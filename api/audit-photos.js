@@ -75,10 +75,13 @@ async function runAudit(token, apply) {
     const source = getUrl(p['Source']);
     if (!photo) continue;
     const photoIsSamsung = photo.includes('samsungfood.com');
+    const photoIsPexels = photo.includes('pexels.com');
     const sourceIsSamsung = (source || '').includes('samsungfood.com');
-    // Suspect : photo Samsung Food attribuée alors que la vraie source de la recette n'en est pas une
-    if (photoIsSamsung && !sourceIsSamsung) {
-      suspects.push({ id: page.id, nom, oldPhoto: photo, source: source || null });
+    // Suspects :
+    //  - photo Samsung Food alors que la vraie source de la recette n'en est pas une
+    //  - photo Pexels (stock photo générique choisie par mots-clés traduits, quasi jamais fidèle au plat précis)
+    if ((photoIsSamsung && !sourceIsSamsung) || photoIsPexels) {
+      suspects.push({ id: page.id, nom, oldPhoto: photo, source: source || null, reason: photoIsPexels ? 'pexels' : 'samsung' });
     }
   }
 

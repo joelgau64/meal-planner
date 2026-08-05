@@ -122,32 +122,13 @@ async function fetchOgImage(url) {
   } catch { return null; }
 }
 
-const PEXELS_API_KEY = '4g2jiEPcHQiYGhnNjrviL0NacwVzxAKrQ7qokCncr1lauq2ARQdhTRFp';
-
-const TR = {
-  'poulet':'chicken','boeuf':'beef','porc':'pork','saumon':'salmon',
-  'cabillaud':'cod fish','merlu':'hake','bar':'sea bass','thon':'tuna',
-  'crevettes':'shrimp','pâtes':'pasta','farfalle':'pasta','orecchiette':'pasta',
-  'nouilles':'noodles','riz':'rice','curry':'curry','salade':'salad',
-  'soupe':'soup','tarte':'tart','tomate':'tomato','champignon':'mushroom',
-  'quinoa':'quinoa','citron':'lemon','épinards':'spinach','courgette':'zucchini',
-  'aubergine':'eggplant','artichaut':'artichoke','petits pois':'peas',
-  'jambon':'ham','bacon':'bacon','mozzarella':'mozzarella','pesto':'pesto',
-  'citronnelle':'lemongrass','olives':'olives','cappuccino':'mushroom soup',
-  'tatin':'tart tomato','roulés':'fish rolls','brocoli':'broccoli',
-  'pommes de terre':'potatoes','lait de coco':'coconut curry'
-};
-
-async function findPhotoPexels(nom) {
-  let q = nom.toLowerCase();
-  for (const [fr, en] of Object.entries(TR)) q = q.replace(new RegExp(fr, 'gi'), en);
-  q = q.replace(/\b(au|aux|à|la|le|les|de|du|des|et|en|avec|sur|ma|mon|sa|ses)\b/gi, ' ');
-  q = q.replace(/\s+/g, ' ').trim() + ' food dish';
-  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&per_page=5&orientation=landscape`;
-  const res = await fetch(url, { headers: { 'Authorization': PEXELS_API_KEY } });
-  const data = await res.json();
-  return data.photos?.[0]?.src?.large2x || data.photos?.[0]?.src?.large || null;
-}
+// ⚠️ Fallback Pexels DÉSACTIVÉ (2026-08) : il choisissait une photo de stock générique à
+// partir d'une traduction mot-à-mot du nom du plat (ex: "poulet basquaise" -> "chicken food
+// dish" -> 1ère photo Pexels trouvée), sans rapport garanti avec la recette précise. C'est la
+// cause identifiée des photos qui ne correspondaient pas aux recettes. Voir api/audit-photos.js
+// pour l'outil de correction, et api/fetch-url.js pour la nouvelle méthode fiable (og:image de
+// la vraie page source de la recette).
+async function findPhotoPexels(){ return null; }
 
 function normalize(s) {
   return (s || '').toLowerCase()
