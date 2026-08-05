@@ -74,6 +74,7 @@ export default async function handler(req, res) {
           emoji: EMOJIS[i % EMOJIS.length],
           image: r.image || null,
           spoonacularId: r.id,
+          note: r.spoonacularScore != null ? Math.round(r.spoonacularScore) : null,
         }));
         return res.status(200).json({ results: results.map(r=>({...r,_origin:'spoonacular'})), source: 'spoonacular' });
       }

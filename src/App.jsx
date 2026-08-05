@@ -1956,7 +1956,9 @@ function DiscoveryTab({toast}){
   const [importStatus,setImportStatus]=useState({}); // {cardTitre: 'loading'|'done'|'error'}
   const [dragX,setDragX]=useState(0);
   const [dragging,setDragging]=useState(false);
+  const [detail,setDetail]=useState(null); // {card,loading,data,error}
   const startX=useRef(null);
+  const movedRef=useRef(false);
   const cardRef=useRef(null);
   const EMOJIS=["🍽️","🥗","🍲","🥘","🍜","🥩","🐟","🥦","🍋","🫐"];
   const decodeEntities=(s)=>{
@@ -1979,6 +1981,7 @@ function DiscoveryTab({toast}){
         description:decodeEntities(r.description),url:r.url,source:r.source,origin:r._origin||"ai",
         categorie:r.categorie||"Dîner",temps:r.temps||null,difficulte:r.difficulte||null,
         emoji:r.emoji||EMOJIS[i%EMOJIS.length],
+        image:r.image||null,spoonacularId:r.spoonacularId||null,note:r.note??null,
       }));
       // Affichage progressif simulant le streaming
       for(let i=0;i<arr.length;i++){
@@ -2006,9 +2009,15 @@ function DiscoveryTab({toast}){
         "Source":nText(card.url||""),
         ...(card.image?{"Photo":nUrl(card.image)}:{}),
       }).then(r=>{
-        setImportStatus(s=>({...s,[card.titre]:r?.object==="skip"?"skip":"done"}));
-        toast(r?.object==="skip"?"\""+card.titre+"\" déjà dans vos recettes":"\""+card.titre+"\" ajoutée ✓");
-      }).catch(e=>{logError("importCardBg",e,{card:card.titre});setImportStatus(s=>({...s,[card.titre]:"error"}));});
+        if(!r||r.object==="error"){
+          logError("importCardBg",new Error(r?.message||"Échec de l'enregistrement Notion"),{card:card.titre});
+          setImportStatus(s=>({...s,[card.titre]:"error"}));
+          toast("\""+card.titre+"\" — échec de l'enregistrement ✕");
+          return;
+        }
+        setImportStatus(s=>({...s,[card.titre]:r.object==="skip"?"skip":"done"}));
+        toast(r.object==="skip"?"\""+card.titre+"\" déjà dans vos recettes":"\""+card.titre+"\" ajoutée ✓");
+      }).catch(e=>{logError("importCardBg",e,{card:card.titre});setImportStatus(s=>({...s,[card.titre]:"error"}));toast("\""+card.titre+"\" — échec de l'enregistrement ✕");});
     };
 
     // Spoonacular : recette complète sans Claude
@@ -2031,6 +2040,32 @@ function DiscoveryTab({toast}){
   }
 
 
+  // Voir la fiche complète d'une carte, sans l'enregistrer dans Notion
+  function openDetail(c){
+    setDetail({card:c,loading:true,data:null,error:false});
+    const finish=(data)=>setDetail(d=>(d&&d.card===c?{card:c,loading:false,data,error:!data?.nom&&!data?.ingredients}:d));
+    const fallback=()=>{
+      const useUrl=c.url&&c.url.startsWith("http");
+      const prompt=useUrl
+        ?`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${c.url}\n\n${RECIPE_JSON_PROMPT}`
+        :`Génère une recette pour: "${c.titre}". Description: ${c.description}. Ingrédients un par ligne.\n\n${RECIPE_JSON_PROMPT}`;
+      claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide.",prompt,useUrl)
+        .then(finish)
+        .catch(e=>{logError("openDetail",e,{card:c.titre});setDetail(d=>(d&&d.card===c?{card:c,loading:false,data:null,error:true}:d));});
+    };
+    if(c.spoonacularId){
+      fetch("/api/spoonacular-recipe?id="+c.spoonacularId).then(r=>r.json())
+        .then(recipe=>{ if(recipe?.nom) finish(recipe); else fallback(); })
+        .catch(fallback);
+    } else fallback();
+  }
+
+  // Passer à la carte suivante/précédente sans enregistrer de décision (like/skip)
+  function goTo(delta){
+    setCurrent(c=>Math.max(0,Math.min(cards.length,c+delta)));
+    setDragX(0);
+  }
+
   function swipe(dir){
     if(current>=cards.length)return;
     const card=cards[current];
@@ -2041,15 +2076,20 @@ function DiscoveryTab({toast}){
     setCurrent(c=>c+1);setDragX(0);
   }
 
-    function onPointerDown(e){startX.current=e.clientX??e.touches?.[0]?.clientX;setDragging(true);}
+    function onPointerDown(e){startX.current=e.clientX??e.touches?.[0]?.clientX;movedRef.current=false;setDragging(true);}
   function onPointerMove(e){
     if(!dragging||startX.current==null)return;
-    setDragX((e.clientX??e.touches?.[0]?.clientX)-startX.current);
+    const dx=(e.clientX??e.touches?.[0]?.clientX)-startX.current;
+    if(Math.abs(dx)>8)movedRef.current=true;
+    setDragX(dx);
   }
   function onPointerUp(){
     if(Math.abs(dragX)>80)swipe(dragX>0?"right":"left");
     else setDragX(0);
     setDragging(false);startX.current=null;
+  }
+  function onCardClick(){
+    if(!movedRef.current&&card)openDetail(card);
   }
 
   const card=cards[current];
@@ -2104,6 +2144,7 @@ function DiscoveryTab({toast}){
           <div ref={cardRef}
             onMouseDown={onPointerDown} onMouseMove={onPointerMove} onMouseUp={onPointerUp} onMouseLeave={onPointerUp}
             onTouchStart={onPointerDown} onTouchMove={onPointerMove} onTouchEnd={onPointerUp}
+            onClick={onCardClick}
             style={{position:"absolute",top:0,left:0,right:0,height:420,
               background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:20,padding:24,
               transform:"translateX("+dragX+"px) rotate("+rotation+"deg)",
@@ -2125,6 +2166,7 @@ function DiscoveryTab({toast}){
                 {card.temps&&<span style={{padding:"3px 10px",background:"#F1F5F9",borderRadius:20,fontSize:12,color:"#475569"}}>⏱ {card.temps} min</span>}
                 {card.difficulte&&<span style={{padding:"3px 10px",background:"#F1F5F9",borderRadius:20,fontSize:12,color:"#475569"}}>{card.difficulte}</span>}
                 {card.origin!=="ai"&&card.source&&<span style={{padding:"3px 10px",background:"#ECFDF5",borderRadius:20,fontSize:12,color:"#059669",fontWeight:600}}>🌐 {card.source}</span>}
+                {card.note!=null&&<span style={{padding:"3px 10px",background:"#FEFCE8",borderRadius:20,fontSize:12,color:"#CA8A04",fontWeight:600,border:"1px solid #FDE68A"}}>⭐ {card.note}/100</span>}
               </div>
               <h2 style={{margin:"0 0 10px",fontSize:20,fontWeight:700,fontFamily:"'Playfair Display',serif",color:"#0F172A",lineHeight:1.3}}>{card.titre}</h2>
               <p style={{margin:0,color:"#64748B",fontSize:13,lineHeight:1.6}}>{card.description}</p>
@@ -2140,6 +2182,10 @@ function DiscoveryTab({toast}){
           <div style={{display:"flex",gap:16,marginTop:432,justifyContent:"center"}}>
             <button onClick={()=>swipe("left")} style={{width:60,height:60,borderRadius:"50%",background:"#FEF2F2",border:"2px solid #FECACA",color:"#DC2626",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
             <button onClick={()=>swipe("right")} style={{width:60,height:60,borderRadius:"50%",background:"#F0FDF4",border:"2px solid #BBF7D0",color:"#16A34A",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>❤️</button>
+          </div>
+          <div style={{display:"flex",justifyContent:"center",gap:24,marginTop:14}}>
+            <button onClick={()=>goTo(-1)} disabled={current===0} style={{background:"none",border:"none",color:current===0?"#CBD5E1":"#64748B",fontSize:13,cursor:current===0?"default":"pointer",fontFamily:"inherit",padding:0}}>‹ Précédente</button>
+            <button onClick={()=>goTo(1)} style={{background:"none",border:"none",color:"#64748B",fontSize:13,cursor:"pointer",fontFamily:"inherit",padding:0}}>Suivante sans choisir ›</button>
           </div>
         </div>
       )}
@@ -2161,7 +2207,7 @@ function DiscoveryTab({toast}){
                     <span style={{color:"#0F172A",fontSize:13,fontWeight:500,flex:1}}>{c.titre}</span>
                     {status==="loading"&&<span style={{fontSize:12,color:"#F59E0B"}}>⏳…</span>}
                     {status==="done"&&<span style={{fontSize:12,color:"#16A34A",fontWeight:600}}>✓</span>}
-                    {status==="error"&&<span style={{fontSize:12,color:"#DC2626"}}>✕</span>}
+                    {status==="error"&&<button onClick={()=>importCardBg(c)} style={{fontSize:11,color:"#DC2626",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"2px 8px",cursor:"pointer",fontFamily:"inherit"}}>✕ réessayer</button>}
                     {!status&&<span style={{fontSize:11,color:"#94A3B8"}}>{c.categorie}</span>}
                   </div>
                   );
@@ -2181,6 +2227,42 @@ function DiscoveryTab({toast}){
         <div style={{textAlign:"center",padding:48}}>
           <div style={{fontSize:44,marginBottom:12}}>✨</div>
           <p style={{margin:0,fontSize:15,color:"#64748B"}}>Décris ce que tu veux cuisiner ci-dessus</p>
+        </div>
+      )}
+
+      {/* Fiche détaillée — consultation seule, aucune décision enregistrée */}
+      {detail&&(
+        <div onClick={()=>setDetail(null)} style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:540,maxHeight:"85vh",overflowY:"auto",background:"#FFFDF9",borderRadius:"20px 20px 0 0",padding:24}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,gap:12}}>
+              <h2 style={{margin:0,fontFamily:"'Playfair Display',serif",fontSize:20,color:"#0F172A",lineHeight:1.3}}>{detail.card.titre}</h2>
+              <button onClick={()=>setDetail(null)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94A3B8",flexShrink:0}}>✕</button>
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+              {detail.card.categorie&&<span style={{padding:"3px 10px",background:"#FFF7ED",borderRadius:20,fontSize:12,color:"#C2622D",fontWeight:600,border:"1px solid #FDBA74"}}>{detail.card.categorie}</span>}
+              {detail.card.note!=null&&<span style={{padding:"3px 10px",background:"#FEFCE8",borderRadius:20,fontSize:12,color:"#CA8A04",fontWeight:600,border:"1px solid #FDE68A"}}>⭐ {detail.card.note}/100</span>}
+            </div>
+            {detail.card.image&&<img src={detail.card.image} alt={detail.card.titre} style={{width:"100%",maxHeight:200,objectFit:"cover",borderRadius:12,marginBottom:14}} onError={e=>e.target.style.display="none"}/>}
+            {detail.loading&&<p style={{color:"#94A3B8",fontSize:14,textAlign:"center",padding:"20px 0"}}>Chargement de la recette…</p>}
+            {!detail.loading&&detail.error&&<p style={{color:"#DC2626",fontSize:14,textAlign:"center",padding:"12px 0"}}>Impossible de charger cette recette pour le moment.</p>}
+            {!detail.loading&&!detail.error&&detail.data&&(
+              <>
+                <div style={{display:"flex",gap:16,marginBottom:14,fontSize:13,color:"#64748B"}}>
+                  {detail.data.temps&&<span>⏱ {detail.data.temps} min</span>}
+                  {detail.data.portions&&<span>🍽 {detail.data.portions} portions</span>}
+                </div>
+                <h4 style={{margin:"0 0 8px",fontSize:14,color:"#0F172A"}}>Ingrédients</h4>
+                <pre style={{whiteSpace:"pre-wrap",fontFamily:"inherit",fontSize:13,color:"#334155",background:"#F8FAFC",padding:12,borderRadius:10,margin:"0 0 16px"}}>{detail.data.ingredients||"—"}</pre>
+                <h4 style={{margin:"0 0 8px",fontSize:14,color:"#0F172A"}}>Instructions</h4>
+                <pre style={{whiteSpace:"pre-wrap",fontFamily:"inherit",fontSize:13,color:"#334155",margin:0}}>{detail.data.instructions||"—"}</pre>
+              </>
+            )}
+            <div style={{display:"flex",gap:10,marginTop:22}}>
+              <button onClick={()=>setDetail(null)} style={{flex:1,padding:"12px",background:"#F1F5F9",border:"none",borderRadius:10,color:"#475569",fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>Continuer à parcourir</button>
+              <button onClick={()=>{swipe("left");setDetail(null);}} style={{padding:"12px 18px",background:"#FEF2F2",border:"2px solid #FECACA",borderRadius:10,color:"#DC2626",fontWeight:700,cursor:"pointer",fontSize:18}}>✕</button>
+              <button onClick={()=>{swipe("right");setDetail(null);}} style={{padding:"12px 18px",background:"#F0FDF4",border:"2px solid #BBF7D0",borderRadius:10,color:"#16A34A",fontWeight:700,cursor:"pointer",fontSize:18}}>❤️</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
