@@ -117,7 +117,8 @@ function parseIngredients(text){
       const match=line.match(/^([\d.,/]+)\s*(?:(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)(?=\s|,|$))?\s*(.+)/i);
       if(match){
         const qty=parseFloat(match[1].replace(',','.'));
-        return{original:line,qty,unit:match[2]||"",name:match[3].trim(),scalable:!isNaN(qty)};
+        const cleanName=match[3].trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
+        return{original:line,qty,unit:match[2]||"",name:cleanName,scalable:!isNaN(qty)};
       }
       return{original:line,qty:null,unit:"",name:line,scalable:false};
     });
@@ -575,6 +576,11 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
         <div>
           <h5 style={{color:"#C2622D",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12,marginTop:0}}>Instructions</h5>
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {instructions.length===0&&(
+              <div style={{fontSize:13,color:"#94A3B8",fontStyle:"italic",padding:"8px 0"}}>
+                Aucune instruction enregistrée. Utilise ✏️ Modifier pour en ajouter.
+              </div>
+            )}
             {instructions.map((step,i)=>(
               <div key={i} style={{display:"flex",gap:10}}>
                 <span style={{fontSize:11,fontWeight:700,color:"#C2622D",minWidth:20,marginTop:2}}>{i+1}.</span>
