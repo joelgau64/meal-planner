@@ -177,6 +177,33 @@ function parseJSON(text){
 const RECIPE_JSON_PROMPT=`Retourne exactement ce JSON sans backticks:
 {"nom":"nom du plat en français","categorie":"Déjeuner","temps":30,"portions":4,"ingredients":"liste avec quantités en g/ml, UN ingrédient par ligne","instructions":"étapes numérotées","tags":[],"note":"","sourceUrl":""}`;
 
+// ── Extraction de recette depuis une URL ────────────────────────────────────
+// 1) Récupère le contenu texte réel de la page côté serveur (fiable)
+// 2) Fait extraire la recette par Claude à partir de ce texte
+// 3) Si le fetch direct échoue (page protégée, JS-only...), on retombe sur web_search
+async function fetchUrlText(url){
+  try{
+    const r=await fetch("/api/fetch-url?url="+encodeURIComponent(url));
+    const d=await r.json();
+    return d?.text||null;
+  }catch{return null;}
+}
+async function extractRecipe(url,fallbackPrompt){
+  const SYS="Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.";
+  if(url&&url.startsWith("http")){
+    const pageText=await fetchUrlText(url);
+    if(pageText){
+      const result=await claudeJSON(SYS,`Voici le contenu texte d'une page web contenant une recette de cuisine. Extrais la recette complète en français avec mesures métriques, ingrédients un par ligne. Ignore le texte hors-sujet (menus, pubs, commentaires).\n\nContenu de la page:\n${pageText}\n\n${RECIPE_JSON_PROMPT}`);
+      if(result?.nom)return result;
+    }
+    // Fallback : le fetch direct a échoué, on tente via web_search (moins fiable)
+    const viaSearch=await claudeJSON(SYS,`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${url}\n\n${RECIPE_JSON_PROMPT}`,true);
+    if(viaSearch?.nom)return viaSearch;
+  }
+  if(fallbackPrompt)return claudeJSON(SYS,fallbackPrompt);
+  return null;
+}
+
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const Icon=({name,size=18})=>{
   const icons={
@@ -711,7 +738,7 @@ function AddRecipeModal({onClose,onSaved}){
   const fetchFromUrl=async()=>{
     if(!url)return;
     setAnalyzing(true);
-    const result=await claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.",`Visite cette URL et extrais la recette en français avec mesures métriques, ingrédients un par ligne: ${url}\n\n${RECIPE_JSON_PROMPT}`,true);
+    const result=await extractRecipe(url);
     if(result){
       setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,sourceUrl:url}));
     }else{
@@ -731,7 +758,7 @@ function AddRecipeModal({onClose,onSaved}){
 
   const save=async()=>{
     setSaving(true);
-    await notionCreate(DB_RECETTES,{
+    const r=await notionCreate(DB_RECETTES,{
       "Nom":nTitle(form.nom),"Catégorie":nSel(form.categorie),"Temps de préparation":nNum(form.temps),
       "Portions":nNum(form.portions||DEFAULT_PORTIONS),"Ingrédients":nText(form.ingredients),
       "Instructions":nText(form.instructions),"Note":nSel(form.note),
@@ -740,6 +767,16 @@ function AddRecipeModal({onClose,onSaved}){
       ...(form.sourceUrl?{"Source":nUrl(form.sourceUrl)}:{}),
     });
     setSaving(false);
+    if(!r||r.object==="error"){
+      logError("AddRecipeModal.save",new Error(r?.message||"Échec de l'enregistrement Notion"),{nom:form.nom});
+      alert("Échec de l'enregistrement dans Notion : "+(r?.message||"erreur inconnue")+". Réessaie.");
+      return;
+    }
+    if(r.object==="skip"){
+      alert("\""+form.nom+"\" existe déjà dans tes recettes — pas de doublon créé.");
+      onClose();
+      return;
+    }
     setCache("recettes",null);
     onSaved("Recette ajoutée ✓");
     onClose();
@@ -2029,11 +2066,8 @@ function DiscoveryTab({toast}){
     } else { claudeFallback(); }
 
     function claudeFallback(){
-      const useUrl=card.url&&card.url.startsWith("http");
-      const prompt=useUrl
-        ?`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${card.url}\n\n${RECIPE_JSON_PROMPT}`
-        :`Génère une recette pour: "${card.titre}". Description: ${card.description}. Ingrédients un par ligne.\n\n${RECIPE_JSON_PROMPT}`;
-      claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide.",prompt,useUrl)
+      const fallbackPrompt=card.url?null:`Génère une recette pour: "${card.titre}". Description: ${card.description}. Ingrédients un par ligne.\n\n${RECIPE_JSON_PROMPT}`;
+      extractRecipe(card.url,fallbackPrompt)
         .then(doImport)
         .catch(e=>{logError("importCardBg",e,{card:card.titre});setImportStatus(s=>({...s,[card.titre]:"error"}));});
     }
@@ -2045,11 +2079,8 @@ function DiscoveryTab({toast}){
     setDetail({card:c,loading:true,data:null,error:false});
     const finish=(data)=>setDetail(d=>(d&&d.card===c?{card:c,loading:false,data,error:!data?.nom&&!data?.ingredients}:d));
     const fallback=()=>{
-      const useUrl=c.url&&c.url.startsWith("http");
-      const prompt=useUrl
-        ?`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${c.url}\n\n${RECIPE_JSON_PROMPT}`
-        :`Génère une recette pour: "${c.titre}". Description: ${c.description}. Ingrédients un par ligne.\n\n${RECIPE_JSON_PROMPT}`;
-      claudeJSON("Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide.",prompt,useUrl)
+      const fallbackPrompt=c.url?null:`Génère une recette pour: "${c.titre}". Description: ${c.description}. Ingrédients un par ligne.\n\n${RECIPE_JSON_PROMPT}`;
+      extractRecipe(c.url,fallbackPrompt)
         .then(finish)
         .catch(e=>{logError("openDetail",e,{card:c.titre});setDetail(d=>(d&&d.card===c?{card:c,loading:false,data:null,error:true}:d));});
     };
