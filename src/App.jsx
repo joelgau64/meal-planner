@@ -181,24 +181,24 @@ const RECIPE_JSON_PROMPT=`Retourne exactement ce JSON sans backticks:
 // 1) Récupère le contenu texte réel de la page côté serveur (fiable)
 // 2) Fait extraire la recette par Claude à partir de ce texte
 // 3) Si le fetch direct échoue (page protégée, JS-only...), on retombe sur web_search
-async function fetchUrlText(url){
+async function fetchUrlContent(url){
   try{
     const r=await fetch("/api/fetch-url?url="+encodeURIComponent(url));
     const d=await r.json();
-    return d?.text||null;
-  }catch{return null;}
+    return {text:d?.text||null,image:d?.image||null};
+  }catch{return {text:null,image:null};}
 }
 async function extractRecipe(url,fallbackPrompt){
   const SYS="Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.";
   if(url&&url.startsWith("http")){
-    const pageText=await fetchUrlText(url);
+    const {text:pageText,image:pageImage}=await fetchUrlContent(url);
     if(pageText){
       const result=await claudeJSON(SYS,`Voici le contenu texte d'une page web contenant une recette de cuisine. Extrais la recette complète en français avec mesures métriques, ingrédients un par ligne. Ignore le texte hors-sujet (menus, pubs, commentaires).\n\nContenu de la page:\n${pageText}\n\n${RECIPE_JSON_PROMPT}`);
-      if(result?.nom)return result;
+      if(result?.nom)return {...result,image:pageImage||null};
     }
     // Fallback : le fetch direct a échoué, on tente via web_search (moins fiable)
     const viaSearch=await claudeJSON(SYS,`Visite cette URL et extrais la recette complète en français avec mesures métriques, ingrédients un par ligne: ${url}\n\n${RECIPE_JSON_PROMPT}`,true);
-    if(viaSearch?.nom)return viaSearch;
+    if(viaSearch?.nom)return {...viaSearch,image:pageImage||null};
   }
   if(fallbackPrompt)return claudeJSON(SYS,fallbackPrompt);
   return null;
@@ -740,7 +740,7 @@ function AddRecipeModal({onClose,onSaved}){
     setAnalyzing(true);
     const result=await extractRecipe(url);
     if(result){
-      setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,sourceUrl:url}));
+      setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,sourceUrl:url,photoUrl:result.image||f.photoUrl}));
     }else{
       alert("Impossible d'extraire la recette depuis cette URL (timeout ou erreur). Réessaie, ou utilise la saisie manuelle.");
     }
@@ -2044,7 +2044,7 @@ function DiscoveryTab({toast}){
         "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
         "Note":nSel(recipe.note||""),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
         "Source":nText(card.url||""),
-        ...(card.image?{"Photo":nUrl(card.image)}:{}),
+        ...((recipe.photo||recipe.image||card.image)?{"Photo":nUrl(recipe.photo||recipe.image||card.image)}:{}),
       }).then(r=>{
         if(!r||r.object==="error"){
           logError("importCardBg",new Error(r?.message||"Échec de l'enregistrement Notion"),{card:card.titre});
@@ -2273,7 +2273,7 @@ function DiscoveryTab({toast}){
               {detail.card.categorie&&<span style={{padding:"3px 10px",background:"#FFF7ED",borderRadius:20,fontSize:12,color:"#C2622D",fontWeight:600,border:"1px solid #FDBA74"}}>{detail.card.categorie}</span>}
               {detail.card.note!=null&&<span style={{padding:"3px 10px",background:"#FEFCE8",borderRadius:20,fontSize:12,color:"#CA8A04",fontWeight:600,border:"1px solid #FDE68A"}}>⭐ {detail.card.note}/100</span>}
             </div>
-            {detail.card.image&&<img src={detail.card.image} alt={detail.card.titre} style={{width:"100%",maxHeight:200,objectFit:"cover",borderRadius:12,marginBottom:14}} onError={e=>e.target.style.display="none"}/>}
+            {(detail.data?.photo||detail.data?.image||detail.card.image)&&<img src={detail.data?.photo||detail.data?.image||detail.card.image} alt={detail.card.titre} style={{width:"100%",maxHeight:200,objectFit:"cover",borderRadius:12,marginBottom:14}} onError={e=>e.target.style.display="none"}/>}
             {detail.loading&&<p style={{color:"#94A3B8",fontSize:14,textAlign:"center",padding:"20px 0"}}>Chargement de la recette…</p>}
             {!detail.loading&&detail.error&&<p style={{color:"#DC2626",fontSize:14,textAlign:"center",padding:"12px 0"}}>Impossible de charger cette recette pour le moment.</p>}
             {!detail.loading&&!detail.error&&detail.data&&(

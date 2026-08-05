@@ -17,6 +17,13 @@ export default async function handler(req, res) {
     if (!r.ok) return res.status(502).json({ error: `Page inaccessible (HTTP ${r.status})` });
     const html = await r.text();
 
+    // Image de la recette : og:image (photo officielle de la page), avant nettoyage du HTML
+    const imgMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+    let image = imgMatch?.[1] || null;
+    if (image && image.startsWith('//')) image = 'https:' + image;
+    if (image && image.startsWith('/')) { try { image = new URL(image, url).href; } catch { /* ignore */ } }
+
     // Nettoyage : supprime script/style/nav/footer/header, décode les entités courantes,
     // convertit les balises en sauts de ligne pour garder une structure lisible pour Claude.
     const text = html
@@ -38,7 +45,7 @@ export default async function handler(req, res) {
 
     if (!text || text.length < 50) return res.status(502).json({ error: 'Contenu de page vide' });
 
-    return res.status(200).json({ text: text.slice(0, 16000), url });
+    return res.status(200).json({ text: text.slice(0, 16000), image, url });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
