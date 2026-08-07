@@ -439,7 +439,7 @@ function CookingMode({recette,onClose}){
 }
 
 
-function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete,onUpdate}){
+function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete,onUpdate,planningEntry,onCancelPlanning,onRequeuePlanning}){
   const [confirmDelete,setConfirmDelete]=useState(false);
   const [deleting,setDeleting]=useState(false);
   const basePortion=recette.portions||DEFAULT_PORTIONS;
@@ -558,6 +558,29 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
         <DaysSince date={recette.derniere_cuisson}/>
         {recette.sourceUrl&&<a href={recette.sourceUrl} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:4,fontSize:12,color:"#C2622D",textDecoration:"none"}}><Icon name="external" size={12}/> Recette originale</a>}
       </div>
+
+      {/* Statut planification (si ouvert depuis le planning) */}
+      {planningEntry&&(
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:16,padding:"10px 14px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10}}>
+          <span style={{fontSize:13,color:"#C2622D",fontWeight:600,flex:1,minWidth:180}}>
+            {planningEntry.queue||!planningEntry.date
+              ?"⏳ En file d'attente"
+              :`📅 Planifié le ${new Date(planningEntry.date+"T00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}${planningEntry.moment?" · "+planningEntry.moment:""}`}
+          </span>
+          <div style={{display:"flex",gap:8}}>
+            {!planningEntry.queue&&planningEntry.date&&onRequeuePlanning&&(
+              <button onClick={()=>onRequeuePlanning(planningEntry)} style={{padding:"6px 12px",background:"#FFFFFF",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                ↩ File d'attente
+              </button>
+            )}
+            {onCancelPlanning&&(
+              <button onClick={()=>onCancelPlanning(planningEntry)} style={{padding:"6px 12px",background:"#FFFFFF",border:"1px solid #FECACA",borderRadius:8,color:"#DC2626",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                ✕ {planningEntry.queue?"Retirer de la file":"Annuler"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Notation étoiles */}
       <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:16}}>
@@ -1444,6 +1467,7 @@ function PlanningTab({toast}){
   const [coursesSelection,setCoursesSelection]=useState([]);
   const [groupMode,setGroupMode]=useState("recette");
   const [selectedMealRecette,setSelectedMealRecette]=useState(null);
+  const [selectedMealPlanning,setSelectedMealPlanning]=useState(null);
   const [planningTargetFromDetail,setPlanningTargetFromDetail]=useState(null);
   const [overdueMeals,setOverdueMeals]=useState(null);
   const [overdueProcessing,setOverdueProcessing]=useState({});
@@ -1588,6 +1612,26 @@ function PlanningTab({toast}){
       });
     }
     toast(`"${meal.recette}" cuisiné ✓`);setConfirming(null);
+  };
+
+  // Annule une entrée de planning (archivage définitif)
+  const cancelPlanningEntry=async(meal)=>{
+    try{
+      await fetch(`/api/notion?path=/v1/pages/${meal.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
+      const updated=planning.filter(p=>p.id!==meal.id);
+      setPlanning(updated);setCache("planning",updated);
+      toast(`"${meal.recette||meal.repas}" retiré du planning ✓`);
+    }catch(e){logError("cancelPlanningEntry",e,{id:meal.id});toast("Erreur lors de l'annulation");}
+    setSelectedMealRecette(null);setSelectedMealPlanning(null);
+  };
+
+  // Remet une entrée de planning en file d'attente (sans date)
+  const requeuePlanningEntry=async(meal)=>{
+    const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
+    setPlanning(updated);setCache("planning",updated);
+    await notionUpdate(meal.id,{"File d'attente":nCheck(true),"Date":nDate(null)});
+    toast(`"${meal.recette||meal.repas}" remis en file d'attente ✓`);
+    setSelectedMealRecette(null);setSelectedMealPlanning(null);
   };
 
   // Drag and drop
@@ -1743,7 +1787,7 @@ function PlanningTab({toast}){
                   </div>
                   {meals.length===0&&<div style={{fontSize:10,color:"#94A3B8",textAlign:"center",paddingTop:8}}>—</div>}
                   {meals.map((m,j)=><MealChip key={j} meal={m}
-  onViewRecette={(meal)=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r)setSelectedMealRecette(r);}}
+  onViewRecette={(meal)=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(meal);}}}
   onMoveToQueue={(meal)=>{
     const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
     setPlanning(updated);
@@ -1808,7 +1852,7 @@ function PlanningTab({toast}){
                     setDragItem(null);setDragOver(null);
                   }}
                   style={{padding:"6px 12px",background:`${MOMENT_COLORS[m.moment]||"#64748B"}22`,border:`1px solid ${MOMENT_COLORS[m.moment]||"#64748B"}44`,borderRadius:20,fontSize:12,fontWeight:600,color:MOMENT_COLORS[m.moment]||"#94A3B8",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,touchAction:"none"}}>
-                  <span onClick={e=>{e.stopPropagation();const r=recettes.find(x=>x.id===m.recette_id||x.nom===(m.recette||m.repas));if(r)setSelectedMealRecette(r);}} style={{cursor:"pointer",flex:1}}>
+                  <span onClick={e=>{e.stopPropagation();const r=recettes.find(x=>x.id===m.recette_id||x.nom===(m.recette||m.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(m);}}} style={{cursor:"pointer",flex:1}}>
                     <Icon name="drag" size={10}/>{m.recette||m.repas}
                   </span>
                 </div>
@@ -1884,11 +1928,14 @@ function PlanningTab({toast}){
       {selectedMealRecette&&!planningTargetFromDetail&&(
         <RecipeDetailModal
           recette={selectedMealRecette}
-          onClose={()=>setSelectedMealRecette(null)}
+          onClose={()=>{setSelectedMealRecette(null);setSelectedMealPlanning(null);}}
           toast={toast}
           onAddToCourses={()=>{}}
           onAddToPlanning={(r,p,mode)=>{setPlanningTargetFromDetail({recette:r,portions:p,mode});}}
           onUpdate={(updated)=>setSelectedMealRecette(updated)}
+          planningEntry={selectedMealPlanning}
+          onCancelPlanning={cancelPlanningEntry}
+          onRequeuePlanning={requeuePlanningEntry}
         />
       )}
       {planningTargetFromDetail&&(
@@ -1897,7 +1944,7 @@ function PlanningTab({toast}){
           portions={planningTargetFromDetail.portions}
           mode={planningTargetFromDetail.mode}
           toast={toast}
-          onClose={()=>{setPlanningTargetFromDetail(null);setSelectedMealRecette(null);}}
+          onClose={()=>{setPlanningTargetFromDetail(null);setSelectedMealRecette(null);setSelectedMealPlanning(null);}}
         />
       )}
 
