@@ -2153,7 +2153,7 @@ function DiscoveryTab({toast}){
         description:decodeEntities(r.description),url:r.url,source:r.source,origin:r._origin||"ai",
         categorie:r.categorie||"Dîner",temps:r.temps||null,difficulte:r.difficulte||null,
         emoji:r.emoji||EMOJIS[i%EMOJIS.length],
-        image:r.image||null,spoonacularId:r.spoonacularId||null,note:r.note??null,
+        image:r.image||null,spoonacularId:r.spoonacularId||null,note:r.note??null,noteCount:r.noteCount??null,
       }));
       // Affichage progressif simulant le streaming
       for(let i=0;i<arr.length;i++){
@@ -2332,7 +2332,7 @@ function DiscoveryTab({toast}){
                 {card.temps&&<span style={{padding:"3px 10px",background:"#F1F5F9",borderRadius:20,fontSize:12,color:"#475569"}}>⏱ {card.temps} min</span>}
                 {card.difficulte&&<span style={{padding:"3px 10px",background:"#F1F5F9",borderRadius:20,fontSize:12,color:"#475569"}}>{card.difficulte}</span>}
                 {card.origin!=="ai"&&card.source&&<span style={{padding:"3px 10px",background:"#ECFDF5",borderRadius:20,fontSize:12,color:"#059669",fontWeight:600}}>🌐 {card.source}</span>}
-                {card.note!=null&&<span style={{padding:"3px 10px",background:"#FEFCE8",borderRadius:20,fontSize:12,color:"#CA8A04",fontWeight:600,border:"1px solid #FDE68A"}}>⭐ {card.note}/100</span>}
+                {card.note!=null&&<span style={{padding:"3px 10px",background:"#FEFCE8",borderRadius:20,fontSize:12,color:"#CA8A04",fontWeight:600,border:"1px solid #FDE68A"}}>⭐ {(card.note/20).toFixed(1)}/5{card.noteCount?` (${card.noteCount})`:""}</span>}
               </div>
               <h2 style={{margin:"0 0 10px",fontSize:20,fontWeight:700,fontFamily:"'Playfair Display',serif",color:"#0F172A",lineHeight:1.3}}>{card.titre}</h2>
               <p style={{margin:0,color:"#64748B",fontSize:13,lineHeight:1.6}}>{card.description}</p>
@@ -2406,7 +2406,7 @@ function DiscoveryTab({toast}){
             </div>
             <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
               {detail.card.categorie&&<span style={{padding:"3px 10px",background:"#FFF7ED",borderRadius:20,fontSize:12,color:"#C2622D",fontWeight:600,border:"1px solid #FDBA74"}}>{detail.card.categorie}</span>}
-              {detail.card.note!=null&&<span style={{padding:"3px 10px",background:"#FEFCE8",borderRadius:20,fontSize:12,color:"#CA8A04",fontWeight:600,border:"1px solid #FDE68A"}}>⭐ {detail.card.note}/100</span>}
+              {detail.card.note!=null&&<span style={{padding:"3px 10px",background:"#FEFCE8",borderRadius:20,fontSize:12,color:"#CA8A04",fontWeight:600,border:"1px solid #FDE68A"}}>⭐ {(detail.card.note/20).toFixed(1)}/5{detail.card.noteCount?` (${detail.card.noteCount} avis)`:""}</span>}
             </div>
             {(detail.data?.photo||detail.data?.image||detail.card.image)&&<img src={detail.data?.photo||detail.data?.image||detail.card.image} alt={detail.card.titre} style={{width:"100%",maxHeight:200,objectFit:"cover",borderRadius:12,marginBottom:14}} onError={e=>e.target.style.display="none"}/>}
             {detail.loading&&<p style={{color:"#94A3B8",fontSize:14,textAlign:"center",padding:"20px 0"}}>Chargement de la recette…</p>}

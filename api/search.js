@@ -1,3 +1,37 @@
+// Extrait la note (aggregateRating) d'une page recette via JSON-LD schema.org.
+// Retourne { note: 0-100, count } ou null. Timeout court pour ne pas ralentir la recherche.
+async function fetchSourceRating(url) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3500);
+    const r = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MealPlanner/1.0)' },
+    });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const html = await r.text();
+    // Chercher tous les blocs JSON-LD
+    const blocks = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+    for (const b of blocks) {
+      let data;
+      try { data = JSON.parse(b[1].trim()); } catch { continue; }
+      const nodes = Array.isArray(data) ? data : (data['@graph'] ? data['@graph'] : [data]);
+      for (const node of nodes) {
+        const ar = node?.aggregateRating;
+        if (ar && (ar.ratingValue != null)) {
+          const val = parseFloat(String(ar.ratingValue).replace(',', '.'));
+          const best = parseFloat(ar.bestRating || 5);
+          if (!isNaN(val) && best > 0) {
+            return { note: Math.round((val / best) * 100), count: parseInt(ar.ratingCount || ar.reviewCount || 0) || null };
+          }
+        }
+      }
+    }
+    return null;
+  } catch { return null; }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -35,7 +69,7 @@ export default async function handler(req, res) {
       let items = await braveSearch(`recette ${query} ${SITES}`);
       if (items.length === 0) items = await braveSearch(`recette ${query}`);
       if (items.length > 0) {
-        const results = items.slice(0, 9).map((item, i) => ({
+        const base = items.slice(0, 9).map((item, i) => ({
           titre: item.title.replace(/\s*[-|:]\s*(Marmiton|750g|CuisineAZ|Jow|Cuisine AZ|Recette.*)$/gi, '').trim(),
           url: item.url,
           description: (item.description || '').replace(/<[^>]+>/g, ''),
@@ -46,7 +80,14 @@ export default async function handler(req, res) {
           emoji: EMOJIS[i % EMOJIS.length],
           image: item.thumbnail?.src || null,
         }));
-        return res.status(200).json({ results: results.map(r=>({...r,_origin:'brave'})), source: 'brave' });
+        // Enrichir chaque carte avec la note de la source (JSON-LD), en parallèle
+        const ratings = await Promise.all(base.map(c => fetchSourceRating(c.url)));
+        const results = base.map((c, i) => ({
+          ...c, _origin: 'brave',
+          note: ratings[i]?.note ?? null,
+          noteCount: ratings[i]?.count ?? null,
+        }));
+        return res.status(200).json({ results, source: 'brave' });
       }
     } catch (err) {
       console.warn('[search] Brave:', err.message);
