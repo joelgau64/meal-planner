@@ -2184,7 +2184,7 @@ function DiscoveryTab({toast}){
         "Temps de préparation":nNum(recipe.temps||card.temps),"Portions":nNum(recipe.portions||4),
         "Ingrédients":nText(recipe.ingredients||""),"Instructions":nText(recipe.instructions||""),
         "Note":nSel(recipe.note||""),"Likes":nNum(0),"Dislikes":nNum(0),"Fois cuisinée":nNum(0),
-        "Source":nText(card.url||""),
+        ...((card.url&&card.url.startsWith("http"))?{"Source":nUrl(card.url)}:{}),
         ...((recipe.photo||recipe.image||card.image)?{"Photo":nUrl(recipe.photo||recipe.image||card.image)}:{}),
       }).then(r=>{
         if(!r||r.object==="error"){
