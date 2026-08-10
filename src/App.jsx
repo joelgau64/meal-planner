@@ -1656,6 +1656,32 @@ function PlanningTab({toast}){
   const getMeals=date=>planning.filter(p=>p.date===date.toISOString().split("T")[0]&&!p.queue);
   const getQueue=()=>planning.filter(p=>p.queue||(p.date&&p.date>=weekDates[0].toISOString().split("T")[0]&&p.date<=weekDates[6].toISOString().split("T")[0]&&!planning.find(x=>x.id===p.id&&!p.queue)));
   const queueItems=planning.filter(p=>p.queue);
+  const [clearingQueue,setClearingQueue]=useState(false);
+  const [confirmClearQueue,setConfirmClearQueue]=useState(false);
+
+  // Retirer un item de la file : archive l'entrée planning (la recette reste dans Recettes)
+  const removeFromQueue=async(item)=>{
+    const updated=planning.filter(p=>p.id!==item.id);
+    setPlanning(updated);setCache("planning",updated);
+    try{
+      await fetch(`/api/notion?path=/v1/pages/${item.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
+    }catch(e){logError("removeFromQueue",e,{item:item.recette||item.repas});}
+  };
+
+  // Vider toute la file d'attente
+  const clearQueue=async()=>{
+    setClearingQueue(true);
+    const items=[...queueItems];
+    const remaining=planning.filter(p=>!p.queue);
+    setPlanning(remaining);setCache("planning",remaining);
+    for(const item of items){
+      try{
+        await fetch(`/api/notion?path=/v1/pages/${item.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
+      }catch(e){logError("clearQueue",e,{item:item.recette||item.repas});}
+    }
+    setClearingQueue(false);setConfirmClearQueue(false);
+    toast(items.length+" repas retirés de la file");
+  };
   const weekLabel=()=>({0:"Cette semaine",1:"Semaine prochaine","-1":"Semaine dernière"}[weekOffset]||`Sem. ${weekOffset>0?"+":""}${weekOffset}`);
 
   const MealChip=({meal,onViewRecette,onMoveToQueue})=>{
@@ -1823,6 +1849,15 @@ function PlanningTab({toast}){
               <Icon name="queue" size={14}/>
               <span style={{fontSize:12,fontWeight:700,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.08em"}}>File d'attente</span>
               <span style={{fontSize:11,color:"#64748B",marginLeft:"auto"}}>Glisser vers un jour</span>
+              {queueItems.length>0&&!confirmClearQueue&&(
+                <button onClick={()=>setConfirmClearQueue(true)} style={{fontSize:11,color:"#DC2626",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontWeight:600,fontFamily:"inherit"}}>Vider</button>
+              )}
+              {confirmClearQueue&&(
+                <span style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button onClick={()=>setConfirmClearQueue(false)} style={{fontSize:11,color:"#64748B",background:"#F1F5F9",border:"none",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontWeight:600,fontFamily:"inherit"}}>Annuler</button>
+                  <button disabled={clearingQueue} onClick={clearQueue} style={{fontSize:11,color:"#fff",background:"#DC2626",border:"none",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontWeight:700,fontFamily:"inherit",opacity:clearingQueue?0.5:1}}>{clearingQueue?"...":"Tout retirer"}</button>
+                </span>
+              )}
             </div>
             {queueItems.length===0&&<div style={{fontSize:12,color:"#94A3B8",textAlign:"center",padding:"8px 0"}}>Vide — glisse ici pour mettre en attente</div>}
             <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
@@ -1862,6 +1897,7 @@ function PlanningTab({toast}){
                   <span onClick={e=>{e.stopPropagation();const r=recettes.find(x=>x.id===m.recette_id||x.nom===(m.recette||m.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(m);}}} style={{cursor:"pointer",flex:1}}>
                     <Icon name="drag" size={10}/>{m.recette||m.repas}
                   </span>
+                  <button onClick={e=>{e.stopPropagation();removeFromQueue(m);}} onTouchStart={e=>e.stopPropagation()} title="Retirer de la file" style={{background:"none",border:"none",cursor:"pointer",color:MOMENT_COLORS[m.moment]||"#94A3B8",fontSize:14,lineHeight:1,padding:"0 2px",opacity:0.7,fontFamily:"inherit"}}>✕</button>
                 </div>
               ))}
             </div>
