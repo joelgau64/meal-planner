@@ -189,6 +189,12 @@ async function fetchUrlContent(url){
     return {text:d?.text||null,image:d?.image||null};
   }catch{return {text:null,image:null};}
 }
+function withTimeout(promise,ms,label){
+  return Promise.race([
+    promise,
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error(label||"Timeout")),ms)),
+  ]);
+}
 async function extractRecipe(url,fallbackPrompt){
   const SYS="Tu es un expert en recettes. Retourne UNIQUEMENT un JSON valide, sans backticks.";
   if(url&&url.startsWith("http")){
@@ -2202,9 +2208,30 @@ function DiscoveryTab({toast}){
 
     function claudeFallback(){
       const fallbackPrompt=card.url?null:`Génère une recette pour: "${card.titre}". Description: ${card.description}. Ingrédients un par ligne.\n\n${RECIPE_JSON_PROMPT}`;
-      extractRecipe(card.url,fallbackPrompt)
-        .then(doImport)
-        .catch(e=>{logError("importCardBg",e,{card:card.titre});setImportStatus(s=>({...s,[card.titre]:"error"}));});
+      withTimeout(extractRecipe(card.url,fallbackPrompt),25000,"Extraction trop longue")
+        .then(recipe=>{
+          if(recipe?.nom){ doImport(recipe); return; }
+          // Extraction échouée mais l'utilisateur a liké : on enregistre au minimum la carte
+          // (titre, description, lien) pour ne jamais perdre le like.
+          doImport({
+            nom:card.titre,
+            categorie:card.categorie||"Dîner",
+            temps:card.temps||null,
+            portions:4,
+            ingredients:"",
+            instructions:card.description?`(Recette à compléter)\n\n${card.description}`:"(Recette à compléter — voir la source)",
+            image:card.image||null,
+          });
+        })
+        .catch(e=>{
+          logError("importCardBg",e,{card:card.titre});
+          // Même en cas de timeout, on sauvegarde la version minimale plutôt que de perdre le like
+          doImport({
+            nom:card.titre,categorie:card.categorie||"Dîner",temps:card.temps||null,portions:4,
+            ingredients:"",instructions:card.description?`(Recette à compléter)\n\n${card.description}`:"(Recette à compléter — voir la source)",
+            image:card.image||null,
+          });
+        });
     }
   }
 

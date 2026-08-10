@@ -6,6 +6,8 @@ export default async function handler(req, res) {
   const url = req.query.url || (req.body && req.body.url);
   if (!url) return res.status(400).json({ error: 'url required' });
 
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000); // 8s max — évite les pages qui pendent
   try {
     const r = await fetch(url, {
       headers: {
@@ -13,7 +15,9 @@ export default async function handler(req, res) {
         'Accept': 'text/html,application/xhtml+xml',
       },
       redirect: 'follow',
+      signal: ctrl.signal,
     });
+    clearTimeout(timer);
     if (!r.ok) return res.status(502).json({ error: `Page inaccessible (HTTP ${r.status})` });
     const html = await r.text();
 
@@ -76,6 +80,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ text: text.slice(0, 16000), image, url });
   } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') return res.status(504).json({ error: 'Timeout: la page a mis trop de temps à répondre' });
     return res.status(500).json({ error: err.message });
   }
 }
