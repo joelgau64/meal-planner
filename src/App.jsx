@@ -2225,6 +2225,9 @@ function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   const [dragX,setDragX]=useState(0);
   const [dragging,setDragging]=useState(false);
   const [detail,setDetail]=useState(null); // {card,loading,data,error}
+  const [localMatches,setLocalMatches]=useState([]); // recettes perso correspondant au frigo
+  const [frigoContext,setFrigoContext]=useState(null); // {article,forme} d'où vient la recherche
+  const [selectedLocal,setSelectedLocal]=useState(null); // recette perso ouverte en détail
   const startX=useRef(null);
   const movedRef=useRef(false);
   const cardRef=useRef(null);
@@ -2262,11 +2265,39 @@ function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   }
 
   // Déclenché quand on arrive depuis le Frigo ("Cuisiner avec")
+  // CASCADE : 1) tes recettes qui matchent la protéine  2) sinon/en complément, Découverte web
   useEffect(()=>{
     if(!frigoCookTarget)return;
-    const forme=frigoCookTarget.forme&&frigoCookTarget.forme!=="Autre"?frigoCookTarget.forme.toLowerCase():"";
+    const article=(frigoCookTarget.article||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    const forme=(frigoCookTarget.forme&&frigoCookTarget.forme!=="Autre")?frigoCookTarget.forme.toLowerCase():"";
     const q=`${forme} ${frigoCookTarget.article}`.trim();
     setPrompt(q);
+    setFrigoContext({article:frigoCookTarget.article,forme:frigoCookTarget.forme});
+
+    // 1) Chercher dans TES recettes (cache) : match sur nom + ingrédients
+    const mesRecettes=getCached("recettes")||[];
+    const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    // mots-clés : le nom de l'article + variantes de forme
+    const keyword=article.split(" ")[0]; // ex "poulet", "saumon"
+    const matches=mesRecettes.filter(r=>{
+      const hay=norm(r.nom)+" "+norm(r.ingredients);
+      if(!hay.includes(keyword))return false;
+      // si une forme précise est connue, privilégier les recettes qui la mentionnent,
+      // mais ne pas exclure celles sans forme (le keyword protéine suffit)
+      return true;
+    });
+    // trier : forme mentionnée d'abord, puis jamais cuisinées, puis récence
+    if(forme){
+      matches.sort((a,b)=>{
+        const af=(norm(a.nom)+norm(a.ingredients)).includes(norm(forme))?1:0;
+        const bf=(norm(b.nom)+norm(b.ingredients)).includes(norm(forme))?1:0;
+        return bf-af;
+      });
+    }
+    setLocalMatches(matches);
+
+    // 2) Lancer AUSSI la recherche web en fallback/complément.
+    //    Si tu as des recettes perso, elles s'affichent en haut ; sinon la Découverte prend le relais.
     search(q);
     clearFrigoTarget&&clearFrigoTarget();
     // eslint-disable-next-line
@@ -2411,6 +2442,30 @@ function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
           </p>
         )}
       </div>
+
+      {/* CASCADE : tes recettes qui utilisent cet ingrédient (priorité sur la Découverte web) */}
+      {frigoContext&&localMatches.length>0&&(
+        <div style={{marginBottom:20,background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:14,padding:"14px 16px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#16A34A",marginBottom:4}}>
+            🍳 Tes recettes avec {frigoContext.article}{frigoContext.forme&&frigoContext.forme!=="Autre"?` (${frigoContext.forme.toLowerCase()})`:""}
+          </div>
+          <p style={{fontSize:12,color:"#15803D",margin:"0 0 10px"}}>Tu sais déjà faire {localMatches.length===1?"ce plat":"ces plats"} — pas besoin de chercher ailleurs.</p>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {localMatches.slice(0,6).map(r=>(
+              <button key={r.id} onClick={()=>setSelectedLocal(r)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 12px",background:"#FFFFFF",border:"1px solid #D1FAE5",borderRadius:10,cursor:"pointer",textAlign:"left",width:"100%"}}>
+                <span style={{fontSize:14,fontWeight:600,color:"#0F172A"}}>{r.nom}</span>
+                <span style={{fontSize:11,color:"#94A3B8",whiteSpace:"nowrap"}}>{r.temps?`${r.temps} min`:""}{!r.derniere_cuisson?" · jamais cuisinée":""}</span>
+              </button>
+            ))}
+          </div>
+          <p style={{fontSize:11,color:"#94A3B8",margin:"10px 0 0",textAlign:"center"}}>↓ ou découvre de nouvelles idées ci-dessous</p>
+        </div>
+      )}
+      {frigoContext&&localMatches.length===0&&!loading&&(
+        <div style={{marginBottom:16,background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:12,padding:"12px 14px",fontSize:13,color:"#C2622D"}}>
+          Aucune recette perso avec {frigoContext.article} — voici des idées à découvrir 👇
+        </div>
+      )}
 
       {/* Skeleton pendant chargement initial */}
       {loading&&cards.length===0&&(
@@ -2559,6 +2614,15 @@ function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
             </div>
           </div>
         </div>
+      )}
+      {selectedLocal&&(
+        <RecipeDetailModal
+          recette={selectedLocal}
+          onClose={()=>setSelectedLocal(null)}
+          toast={toast}
+          onAddToCourses={()=>{}}
+          onAddToPlanning={()=>{}}
+        />
       )}
     </div>
   );
