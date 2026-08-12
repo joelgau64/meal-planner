@@ -2625,6 +2625,7 @@ function FrigoTab({toast,onCookWith}){
   const [analyzing,setAnalyzing]=useState(false);
   const [draft,setDraft]=useState(null); // recette extraite en attente de confirmation
   const [preview,setPreview]=useState(null);
+  const [zoomed,setZoomed]=useState(false);
   const camRef=useRef(null);
   const fileRef=useRef(null);
 
@@ -2751,7 +2752,7 @@ function FrigoTab({toast,onCookWith}){
               <h3 style={{margin:0,fontSize:17,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>Nouveau produit</h3>
               <button onClick={()=>{setShowCapture(false);setDraft(null);setPreview(null);}} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",fontSize:18}}>✕</button>
             </div>
-            {preview&&<img src={preview} alt="" style={{width:"100%",height:140,objectFit:"cover",borderRadius:12,marginBottom:12}}/>}
+            {preview&&<div style={{position:"relative",marginBottom:12}}><img src={preview} alt="" onClick={()=>setZoomed(true)} style={{width:"100%",height:140,objectFit:"cover",borderRadius:12,cursor:"zoom-in",display:"block"}}/><span onClick={()=>setZoomed(true)} style={{position:"absolute",bottom:8,right:8,background:"rgba(15,23,42,0.75)",color:"#fff",fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:20,cursor:"zoom-in"}}>🔍 Agrandir</span></div>}
             {analyzing?(
               <div style={{textAlign:"center",padding:"20px",color:"#64748B",fontSize:14}}>🔍 Lecture de l'étiquette…</div>
             ):draft?(
@@ -2770,6 +2771,13 @@ function FrigoTab({toast,onCookWith}){
               </div>
             ):null}
           </div>
+          {zoomed&&preview&&(
+            <div onClick={()=>setZoomed(false)} style={{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
+              <img src={preview} alt="" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",borderRadius:8}}/>
+              <button onClick={e=>{e.stopPropagation();setZoomed(false);}} style={{position:"absolute",top:"calc(12px + env(safe-area-inset-top))",right:16,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",fontSize:22,width:40,height:40,borderRadius:20,cursor:"pointer"}}>✕</button>
+              <span style={{position:"absolute",bottom:"calc(16px + env(safe-area-inset-bottom))",left:0,right:0,textAlign:"center",color:"rgba(255,255,255,0.7)",fontSize:12}}>Pince pour zoomer · touche pour fermer</span>
+            </div>
+          )}
         </div>
       )}
     </div>
