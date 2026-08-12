@@ -77,7 +77,14 @@ async function notionUpdate(pageId,properties){
 const nText=s=>({rich_text:[{text:{content:String(s||"").slice(0,2000)}}]});
 const nTitle=s=>({title:[{text:{content:String(s||"")}}]});
 const nNum=n=>({number:Number(n)||0});
-const nSel=s=>s?{select:{name:String(s)}}:{select:null};
+const nSel=s=>{
+  if(!s)return{select:null};
+  // Notion interdit les virgules dans les options de select.
+  // Une virgule = souvent une description parasite renvoyée par la Vision :
+  // on garde ce qui précède la 1re virgule, nettoyé et borné à 100 caractères.
+  let v=String(s).split(",")[0].trim().slice(0,100);
+  return v?{select:{name:v}}:{select:null};
+};
 const nDate=d=>d?{date:{start:d}}:{date:null};
 const nCheck=b=>({checkbox:!!b});
 const nUrl=u=>u?{url:u}:{url:null};
