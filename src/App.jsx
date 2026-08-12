@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 const DB_RECETTES = "39c7b0f8-bf02-4893-bc05-6d82b8c38617";
 const DB_PLANNING = "dc70bd98-0691-41b9-abfc-5bde68630995";
 const DB_COURSES = "35f5b3b5-095f-4998-a014-9a112807e711";
+const DB_FRIGO = "3ba7bf2a-8f76-81bd-a878-dbf3ae8be0be";
 
 const DAYS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner"];
@@ -181,6 +182,10 @@ function parseJSON(text){
     return JSON.parse(cleaned.slice(start,end+1));
   }catch{return null;}
 }
+
+const FRIGO_JSON_PROMPT=`Tu regardes la photo d'un emballage de produit frais (viande, poisson ou volaille). Retourne EXACTEMENT ce JSON sans backticks, sans virgule dans les valeurs:
+{"article":"nom court du produit ex: Poulet ou Saumon","proteine":"Viande|Poisson|Volaille|Autre","forme":"Filet|Cuisses|Pavé|Steak|Entier|Haché|Tranches|Autre","date_peremption":"AAAA-MM-JJ (la date limite de consommation lisible sur l'emballage)","quantite":"ex: 500g ou 4 pièces si visible sinon vide"}
+Si la date n'est pas lisible, mets null pour date_peremption. Ne mets JAMAIS de virgule dans une valeur.`;
 
 const RECIPE_JSON_PROMPT=`Retourne exactement ce JSON sans backticks:
 {"nom":"nom du plat en français","categorie":"Déjeuner","temps":30,"portions":4,"ingredients":"liste avec quantités en g/ml, UN ingrédient par ligne","instructions":"étapes numérotées","tags":[],"note":"","sourceUrl":""}`;
@@ -2207,7 +2212,7 @@ function CoursesTab({toast}){
 }
 
 // ── Discovery Tab ─────────────────────────────────────────────────────────────
-function DiscoveryTab({toast}){
+function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   const [prompt,setPrompt]=useState("");
   const [cards,setCards]=useState([]);
   const [current,setCurrent]=useState(0);
@@ -2232,11 +2237,12 @@ function DiscoveryTab({toast}){
   const btnP={padding:"12px 24px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",fontFamily:"inherit",width:"100%"};
   const btnD={...btnP,opacity:0.4,cursor:"not-allowed"};
 
-  async function search(){
-    if(!prompt.trim())return;
+  async function search(queryOverride){
+    const q=(queryOverride||prompt).trim();
+    if(!q)return;
     setLoading(true);setCards([]);setCurrent(0);setLiked([]);setDone(false);
     try{
-      const res=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:`recette ${prompt}`})});
+      const res=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:`recette ${q}`})});
       const data=await res.json();
       const arr=(data.results||[]).slice(0,9).map((r,i)=>({
         titre:decodeEntities((r.titre||"").replace(/[-|]\s*(Marmiton|CuisineAZ|750g|Chef Simon|Cuisine AZ|Recette)\s*$/gi,"").trim()),
@@ -2253,6 +2259,17 @@ function DiscoveryTab({toast}){
     }catch(e){console.error(e);}
     setLoading(false);
   }
+
+  // Déclenché quand on arrive depuis le Frigo ("Cuisiner avec")
+  useEffect(()=>{
+    if(!frigoCookTarget)return;
+    const forme=frigoCookTarget.forme&&frigoCookTarget.forme!=="Autre"?frigoCookTarget.forme.toLowerCase():"";
+    const q=`${forme} ${frigoCookTarget.article}`.trim();
+    setPrompt(q);
+    search(q);
+    clearFrigoTarget&&clearFrigoTarget();
+    // eslint-disable-next-line
+  },[frigoCookTarget]);
 
   // Import en arrière-plan : Spoonacular (0 crédit) → Claude fallback
   function importCardBg(card){
@@ -2575,8 +2592,193 @@ function ErrorPanel({onClose}){
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
+function parseFrigo(page){
+  const p=page.properties||{};
+  const getT=x=>x?.title?.[0]?.plain_text||"";
+  const getS=x=>x?.select?.name||"";
+  const getD=x=>x?.date?.start||null;
+  const getR=x=>x?.rich_text?.[0]?.plain_text||"";
+  const getC=x=>!!x?.checkbox;
+  return{
+    id:page.id,
+    article:getT(p["Article"]),
+    proteine:getS(p["Protéine"]),
+    forme:getS(p["Forme"]),
+    peremption:getD(p["Date de péremption"]),
+    quantite:getR(p["Quantité"]),
+    ajoute:getD(p["Ajouté le"]),
+    consomme:getC(p["Consommé"]),
+  };
+}
+
+function joursAvant(dateStr){
+  if(!dateStr)return null;
+  const d=new Date(dateStr+"T00:00");
+  const now=new Date();now.setHours(0,0,0,0);
+  return Math.round((d-now)/(1000*3600*24));
+}
+
+function FrigoTab({toast,onCookWith}){
+  const [items,setItems]=useState(()=>getCache("frigo")||[]);
+  const [loading,setLoading]=useState(false);
+  const [showCapture,setShowCapture]=useState(false);
+  const [analyzing,setAnalyzing]=useState(false);
+  const [draft,setDraft]=useState(null); // recette extraite en attente de confirmation
+  const [preview,setPreview]=useState(null);
+  const camRef=useRef(null);
+  const fileRef=useRef(null);
+
+  const load=useCallback(async(force)=>{
+    if(!force){const c=getCache("frigo");if(c){setItems(c);return;}}
+    setLoading(true);
+    try{
+      const data=await notionQuery(DB_FRIGO);
+      const parsed=(data.results||[]).map(parseFrigo).filter(x=>!x.consomme);
+      parsed.sort((a,b)=>{
+        const ja=joursAvant(a.peremption),jb=joursAvant(b.peremption);
+        if(ja==null)return 1;if(jb==null)return -1;return ja-jb;
+      });
+      setItems(parsed);setCache("frigo",parsed);
+    }catch(e){logError("frigoLoad",e);}
+    setLoading(false);
+  },[]);
+  useEffect(()=>{load();},[load]);
+
+  const handleFile=async(file)=>{
+    if(!file||!file.type.startsWith("image/"))return;
+    setShowCapture(true);
+    setPreview(URL.createObjectURL(file));
+    setAnalyzing(true);
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      const base64=e.target.result.split(",")[1];
+      const r=await claudeVision(FRIGO_JSON_PROMPT,base64,file.type);
+      if(r?.article){
+        setDraft({
+          article:r.article||"",
+          proteine:["Viande","Poisson","Volaille","Autre"].includes(r.proteine)?r.proteine:"Autre",
+          forme:["Filet","Cuisses","Pavé","Steak","Entier","Haché","Tranches","Autre"].includes(r.forme)?r.forme:"Autre",
+          peremption:r.date_peremption||"",
+          quantite:r.quantite||"",
+        });
+      } else {
+        setDraft({article:"",proteine:"Autre",forme:"Autre",peremption:"",quantite:""});
+        toast("Lecture incomplète — complète à la main");
+      }
+      setAnalyzing(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveDraft=async()=>{
+    if(!draft?.article)return;
+    const today=new Date().toISOString().split("T")[0];
+    try{
+      const r=await notionCreate(DB_FRIGO,{
+        "Article":nTitle(draft.article),
+        "Protéine":nSel(draft.proteine),
+        "Forme":nSel(draft.forme),
+        ...(draft.peremption?{"Date de péremption":nDate(draft.peremption)}:{}),
+        "Quantité":nText(draft.quantite||""),
+        "Ajouté le":nDate(today),
+        "Consommé":nCheck(false),
+      });
+      if(r?.object==="error"){toast("Erreur enregistrement");return;}
+      toast(draft.article+" ajouté au frigo ✓");
+      setShowCapture(false);setDraft(null);setPreview(null);
+      load(true);
+    }catch(e){logError("frigoSave",e);toast("Erreur");}
+  };
+
+  const markConsumed=async(item)=>{
+    const updated=items.filter(x=>x.id!==item.id);
+    setItems(updated);setCache("frigo",updated);
+    try{await notionUpdate(item.id,{"Consommé":nCheck(true)});}
+    catch(e){logError("frigoConsume",e,{item:item.article});}
+  };
+
+  const badge=(j)=>{
+    if(j==null)return{txt:"pas de date",bg:"#F1F5F9",fg:"#64748B"};
+    if(j<0)return{txt:"périmé",bg:"#FEF2F2",fg:"#DC2626"};
+    if(j===0)return{txt:"aujourd'hui",bg:"#FEF2F2",fg:"#DC2626"};
+    if(j===1)return{txt:"demain",bg:"#FFF7ED",fg:"#C2622D"};
+    if(j<=3)return{txt:`${j} jours`,bg:"#FFF7ED",fg:"#C2622D"};
+    return{txt:`${j} jours`,bg:"#ECFDF5",fg:"#059669"};
+  };
+
+  return(
+    <div style={{maxWidth:640,margin:"0 auto"}}>
+      <input ref={camRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        <button onClick={()=>camRef.current?.click()} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"12px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}>📷 Photographier un produit</button>
+        <button onClick={()=>fileRef.current?.click()} style={{padding:"12px 14px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:10,color:"#475569",fontWeight:600,fontSize:13,cursor:"pointer"}}>🖼️</button>
+      </div>
+
+      {items.length===0&&!loading&&(
+        <div style={{textAlign:"center",padding:"40px 20px",color:"#94A3B8"}}>
+          <div style={{fontSize:40,marginBottom:8}}>🧊</div>
+          <p style={{fontSize:14}}>Aucun produit enregistré.<br/>Photographie tes viandes, poissons et volailles pour suivre les dates de péremption.</p>
+        </div>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {items.map(item=>{
+          const j=joursAvant(item.peremption);const b=badge(j);
+          return(
+            <div key={item.id} style={{background:"#FFFFFF",border:"1px solid #F1F5F9",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:15,fontWeight:700,color:"#0F172A"}}>{item.article}{item.forme&&item.forme!=="Autre"?<span style={{fontWeight:400,color:"#64748B"}}> · {item.forme}</span>:""}</div>
+                  <div style={{fontSize:12,color:"#94A3B8",marginTop:2}}>{item.proteine}{item.quantite?` · ${item.quantite}`:""}</div>
+                </div>
+                <span style={{padding:"4px 10px",background:b.bg,color:b.fg,borderRadius:20,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{b.txt}</span>
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:10}}>
+                <button onClick={()=>onCookWith&&onCookWith(item)} style={{flex:1,padding:"8px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",fontSize:12,fontWeight:600,cursor:"pointer"}}>🍳 Cuisiner avec</button>
+                <button onClick={()=>markConsumed(item)} style={{flex:1,padding:"8px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,color:"#16A34A",fontSize:12,fontWeight:600,cursor:"pointer"}}>✓ Consommé</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {showCapture&&(
+        <div style={{position:"fixed",inset:0,zIndex:2500,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-inner" style={{background:"#FFFFFF",borderRadius:"20px 20px 0 0",maxWidth:520,width:"100%",maxHeight:"90vh",overflow:"auto",padding:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <h3 style={{margin:0,fontSize:17,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>Nouveau produit</h3>
+              <button onClick={()=>{setShowCapture(false);setDraft(null);setPreview(null);}} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",fontSize:18}}>✕</button>
+            </div>
+            {preview&&<img src={preview} alt="" style={{width:"100%",height:140,objectFit:"cover",borderRadius:12,marginBottom:12}}/>}
+            {analyzing?(
+              <div style={{textAlign:"center",padding:"20px",color:"#64748B",fontSize:14}}>🔍 Lecture de l'étiquette…</div>
+            ):draft?(
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Article</label><input value={draft.article} onChange={e=>setDraft(d=>({...d,article:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}/></div>
+                <div style={{display:"flex",gap:8}}>
+                  <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Protéine</label><select value={draft.proteine} onChange={e=>setDraft(d=>({...d,proteine:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}>{["Viande","Poisson","Volaille","Autre"].map(o=><option key={o}>{o}</option>)}</select></div>
+                  <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Forme</label><select value={draft.forme} onChange={e=>setDraft(d=>({...d,forme:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}>{["Filet","Cuisses","Pavé","Steak","Entier","Haché","Tranches","Autre"].map(o=><option key={o}>{o}</option>)}</select></div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Péremption</label><input type="date" value={draft.peremption} onChange={e=>setDraft(d=>({...d,peremption:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}/></div>
+                  <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Quantité</label><input value={draft.quantite} onChange={e=>setDraft(d=>({...d,quantite:e.target.value}))} placeholder="500g" style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}/></div>
+                </div>
+                {!draft.peremption&&<p style={{fontSize:12,color:"#C2622D",margin:0}}>⚠️ Date non lue — saisis-la pour activer le suivi de péremption.</p>}
+                <button onClick={saveDraft} disabled={!draft.article} style={{width:"100%",padding:"12px",background:draft.article?"#C2622D":"#E2E8F0",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:draft.article?"pointer":"default",marginTop:4}}>Ajouter au frigo</button>
+              </div>
+            ):null}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App(){
   const [tab,setTab]=useState("planning");
+  const [frigoCookTarget,setFrigoCookTarget]=useState(null);
   const [toastMsg,setToastMsg]=useState(null);
   const [showErrorPanel,setShowErrorPanel]=useState(false);
   const [errorCount,setErrorCount]=useState(0);
@@ -2616,6 +2818,7 @@ export default function App(){
     {id:"recettes",  label:"Recettes",  emoji:"📖"},
     {id:"planning",  label:"Planning",  emoji:"📅"},
     {id:"courses",   label:"Courses",   emoji:"🛒"},
+    {id:"frigo",     label:"Frigo",     emoji:"🧊"},
     {id:"discovery", label:"Découvrir", emoji:"✨"},
   ];
 
@@ -2623,6 +2826,7 @@ export default function App(){
     recettes:  "Mes recettes",
     planning:  "Planning",
     courses:   "Liste de courses",
+    frigo:     "Mon frigo",
     discovery: "Découvrir",
   };
 
@@ -2712,7 +2916,8 @@ export default function App(){
         {tab==="recettes"  &&<RecettesTab  toast={toast}/>}
         {tab==="planning"  &&<PlanningTab  toast={toast}/>}
         {tab==="courses"   &&<CoursesTab   toast={toast}/>}
-        {tab==="discovery" &&<DiscoveryTab toast={toast}/>}
+        {tab==="frigo"     &&<FrigoTab     toast={toast} onCookWith={(item)=>{setFrigoCookTarget(item);setTab("discovery");}}/>}
+        {tab==="discovery" &&<DiscoveryTab toast={toast} frigoCookTarget={frigoCookTarget} clearFrigoTarget={()=>setFrigoCookTarget(null)}/>}
       </div>
 
       {/* ── Bottom tab bar (mobile only) ── */}

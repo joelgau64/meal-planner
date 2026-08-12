@@ -6,6 +6,7 @@ const DBS = {
   DB_RECETTES: '39c7b0f8-bf02-4893-bc05-6d82b8c38617',
   DB_PLANNING: 'dc70bd98-0691-41b9-abfc-5bde68630995',
   DB_COURSES:  '35f5b3b5-095f-4998-a014-9a112807e711',
+  DB_FRIGO:    '3ba7bf2a-8f76-81bd-a878-dbf3ae8be0be',
 };
 
 // Propriétés attendues par le code (d'après App.jsx)
@@ -36,6 +37,15 @@ const EXPECTED = {
     'Notes':          'rich_text',
     'Cuisiné':        'checkbox',
     "File d'attente": 'checkbox',
+  },
+  DB_FRIGO: {
+    'Article':            'title',
+    'Protéine':           'select',
+    'Forme':              'select',
+    'Date de péremption': 'date',
+    'Quantité':           'rich_text',
+    'Ajouté le':          'date',
+    'Consommé':           'checkbox',
   },
   DB_COURSES: {
     'Article':    'title',
