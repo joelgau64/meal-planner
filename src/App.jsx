@@ -2619,7 +2619,7 @@ function joursAvant(dateStr){
 }
 
 function FrigoTab({toast,onCookWith}){
-  const [items,setItems]=useState(()=>getCache("frigo")||[]);
+  const [items,setItems]=useState(()=>getCached("frigo")||[]);
   const [loading,setLoading]=useState(false);
   const [showCapture,setShowCapture]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
@@ -2629,7 +2629,7 @@ function FrigoTab({toast,onCookWith}){
   const fileRef=useRef(null);
 
   const load=useCallback(async(force)=>{
-    if(!force){const c=getCache("frigo");if(c){setItems(c);return;}}
+    if(!force){const c=getCached("frigo");if(c){setItems(c);return;}}
     setLoading(true);
     try{
       const data=await notionQuery(DB_FRIGO);
