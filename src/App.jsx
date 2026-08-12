@@ -1207,7 +1207,7 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
     }
     setGeneratingCourses(false);
     // Mettre à jour le cache courses directement sans recharger
-    const existing=getCache("courses")||[];
+    const existing=getCached("courses")||[];
     setCache("courses",[...existing,...newItems]);
     toast(ok+" article"+(ok>1?"s":"")+" ajouté"+(ok>1?"s":"")+" à la liste de courses ✓");
   };
