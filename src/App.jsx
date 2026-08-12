@@ -185,7 +185,8 @@ function parseJSON(text){
 
 const FRIGO_JSON_PROMPT=`Tu regardes la photo d'un emballage de produit frais (viande, poisson ou volaille). Retourne EXACTEMENT ce JSON sans backticks, sans virgule dans les valeurs:
 {"article":"nom court du produit ex: Poulet ou Saumon","proteine":"Viande|Poisson|Volaille|Autre","forme":"Filet|Cuisses|Pavé|Steak|Entier|Haché|Tranches|Autre","date_peremption":"AAAA-MM-JJ (la date limite de consommation lisible sur l'emballage)","quantite":"ex: 500g ou 4 pièces si visible sinon vide"}
-Si la date n'est pas lisible, mets null pour date_peremption. Ne mets JAMAIS de virgule dans une valeur.`;
+Si la date n'est pas lisible, mets null pour date_peremption. Ne mets JAMAIS de virgule dans une valeur.
+IMPORTANT: nous sommes en 2026. Une date limite de consommation est TOUJOURS dans le futur proche (quelques jours à quelques semaines). Si tu lis une année passée comme 2023 ou 2024, tu as mal lu le chiffre — relis attentivement, l'année est 2026 (ou 2027 en fin d'année).`;
 
 const RECIPE_JSON_PROMPT=`Retourne exactement ce JSON sans backticks:
 {"nom":"nom du plat en français","categorie":"Déjeuner","temps":30,"portions":4,"ingredients":"liste avec quantités en g/ml, UN ingrédient par ligne","instructions":"étapes numérotées","tags":[],"note":"","sourceUrl":""}`;
@@ -2207,6 +2208,29 @@ function CoursesTab({toast}){
           <button onClick={addItem} disabled={saving||!form.article} style={form.article?btnPrimary:btnDisabled}>{saving?"Ajout...":"Ajouter"}</button>
         </Modal>
       )}
+      {editItem&&(
+        <div style={{position:"fixed",inset:0,zIndex:2600,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div className="modal-inner" style={{background:"#FFFFFF",borderRadius:"20px 20px 0 0",maxWidth:520,width:"100%",maxHeight:"90vh",overflow:"auto",padding:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <h3 style={{margin:0,fontSize:17,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>Modifier</h3>
+              <button onClick={()=>setEditItem(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",fontSize:18}}>✕</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Article</label><input value={editItem.article} onChange={e=>setEditItem(d=>({...d,article:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}/></div>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Protéine</label><select value={editItem.proteine} onChange={e=>setEditItem(d=>({...d,proteine:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}>{["Viande","Poisson","Volaille","Autre"].map(o=><option key={o}>{o}</option>)}</select></div>
+                <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Forme</label><select value={editItem.forme} onChange={e=>setEditItem(d=>({...d,forme:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}>{["Filet","Cuisses","Pavé","Steak","Entier","Haché","Tranches","Autre"].map(o=><option key={o}>{o}</option>)}</select></div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Péremption</label><input type="date" value={editItem.peremption||""} onChange={e=>setEditItem(d=>({...d,peremption:e.target.value}))} style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}/></div>
+                <div style={{flex:1}}><label style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase"}}>Quantité</label><input value={editItem.quantite||""} onChange={e=>setEditItem(d=>({...d,quantite:e.target.value}))} placeholder="500g" style={{width:"100%",padding:"10px",border:"1px solid #E2E8F0",borderRadius:8,fontSize:14,marginTop:4}}/></div>
+              </div>
+              <button onClick={saveEdit} disabled={!editItem.article} style={{width:"100%",padding:"12px",background:editItem.article?"#C2622D":"#E2E8F0",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:editItem.article?"pointer":"default",marginTop:4}}>Enregistrer</button>
+              <button onClick={()=>deleteItem(editItem)} style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid #FECACA",borderRadius:10,color:"#DC2626",fontSize:13,fontWeight:600,cursor:"pointer"}}>🗑 Supprimer du frigo</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2626,6 +2650,7 @@ function FrigoTab({toast,onCookWith}){
   const [draft,setDraft]=useState(null); // recette extraite en attente de confirmation
   const [preview,setPreview]=useState(null);
   const [zoomed,setZoomed]=useState(false);
+  const [editItem,setEditItem]=useState(null); // item en cours d'édition
   const camRef=useRef(null);
   const fileRef=useRef(null);
 
@@ -2698,6 +2723,30 @@ function FrigoTab({toast,onCookWith}){
     catch(e){logError("frigoConsume",e,{item:item.article});}
   };
 
+  const saveEdit=async()=>{
+    if(!editItem?.article)return;
+    try{
+      await notionUpdate(editItem.id,{
+        "Article":nTitle(editItem.article),
+        "Protéine":nSel(editItem.proteine),
+        "Forme":nSel(editItem.forme),
+        ...(editItem.peremption?{"Date de péremption":nDate(editItem.peremption)}:{"Date de péremption":nDate(null)}),
+        "Quantité":nText(editItem.quantite||""),
+      });
+      toast("Modifié ✓");
+      setEditItem(null);
+      load(true);
+    }catch(e){logError("frigoEdit",e,{item:editItem.article});toast("Erreur");}
+  };
+
+  const deleteItem=async(item)=>{
+    const updated=items.filter(x=>x.id!==item.id);
+    setItems(updated);setCache("frigo",updated);
+    setEditItem(null);
+    try{await fetch(`/api/notion?path=/v1/pages/${item.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});}
+    catch(e){logError("frigoDelete",e,{item:item.article});}
+  };
+
   const badge=(j)=>{
     if(j==null)return{txt:"pas de date",bg:"#F1F5F9",fg:"#64748B"};
     if(j<0)return{txt:"périmé",bg:"#FEF2F2",fg:"#DC2626"};
@@ -2737,6 +2786,7 @@ function FrigoTab({toast,onCookWith}){
                 <span style={{padding:"4px 10px",background:b.bg,color:b.fg,borderRadius:20,fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{b.txt}</span>
               </div>
               <div style={{display:"flex",gap:8,marginTop:10}}>
+                <button onClick={()=>setEditItem({...item})} style={{padding:"8px 10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:8,color:"#64748B",fontSize:12,fontWeight:600,cursor:"pointer"}}>✏️</button>
                 <button onClick={()=>onCookWith&&onCookWith(item)} style={{flex:1,padding:"8px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",fontSize:12,fontWeight:600,cursor:"pointer"}}>🍳 Cuisiner avec</button>
                 <button onClick={()=>markConsumed(item)} style={{flex:1,padding:"8px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:8,color:"#16A34A",fontSize:12,fontWeight:600,cursor:"pointer"}}>✓ Consommé</button>
               </div>
