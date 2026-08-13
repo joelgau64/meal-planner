@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src --ext .js,.jsx",
+    "check": "eslint src --ext .js,.jsx --quiet && vite build"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -14,6 +16,9 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",
+    "eslint": "^8.57.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "vite": "^5.0.0"
   }
 }
