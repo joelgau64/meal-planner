@@ -2242,7 +2242,9 @@ function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   const btnD={...btnP,opacity:0.4,cursor:"not-allowed"};
 
   async function search(queryOverride){
-    const q=(queryOverride||prompt).trim();
+    // queryOverride peut être un event (onClick) — n'accepter qu'une string.
+    const override=(typeof queryOverride==="string")?queryOverride:"";
+    const q=(override||prompt).trim();
     if(!q)return;
     setLoading(true);setCards([]);setCurrent(0);setLiked([]);setDone(false);
     try{
@@ -2433,7 +2435,7 @@ function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
           onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();search();}}}
           placeholder="Ex: 5 repas légers pour une semaine de canicule, pas de viande rouge"
           rows={3} style={{...inputStyle,resize:"vertical",lineHeight:1.5}}/>
-        <button onClick={search} disabled={loading||!prompt.trim()} style={{...(loading||!prompt.trim()?btnD:btnP),marginTop:10}}>
+        <button onClick={()=>search()} disabled={loading||!prompt.trim()} style={{...(loading||!prompt.trim()?btnD:btnP),marginTop:10}}>
           {loading?"✨ Recherche en cours… ("+cards.length+" trouvées)":"✨ Trouver des recettes"}
         </button>
         {cards.length>0&&!loading&&(
