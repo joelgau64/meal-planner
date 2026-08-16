@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 const DB_RECETTES = "39c7b0f8-bf02-4893-bc05-6d82b8c38617";
 const DB_PLANNING = "dc70bd98-0691-41b9-abfc-5bde68630995";
@@ -2105,6 +2105,28 @@ function CoursesTab({toast}){
   const [showCoursesModal,setShowCoursesModal]=useState(false);
   const [coursesSelection,setCoursesSelection]=useState([]);
   const [generatingCourses,setGeneratingCourses]=useState(false);
+  const [editItem,setEditItem]=useState(null); // ligne en cours d'édition
+  const [editCatTouched,setEditCatTouched]=useState(false);
+  const [suggestions,setSuggestions]=useState([]); // autocomplétion sur l'historique
+
+  // Historique normalisé des articles déjà utilisés (pour normer l'orthographe).
+  // On garde la 1re orthographe rencontrée par forme normalisée.
+  const articleHistory=useMemo(()=>{
+    const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+    const seen=new Map();
+    for(const c of courses){
+      const k=norm(c.article);
+      if(k&&!seen.has(k))seen.set(k,{article:c.article,categorie:c.categorie});
+    }
+    return[...seen.values()];
+  },[courses]);
+
+  const updateSuggestions=(val)=>{
+    const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+    const q=norm(val);
+    if(q.length<1){setSuggestions([]);return;}
+    setSuggestions(articleHistory.filter(h=>norm(h.article).includes(q)).slice(0,6));
+  };
 
   const load=useCallback(async(force=false)=>{
     const cached=getCached("courses");
@@ -2121,6 +2143,21 @@ function CoursesTab({toast}){
     const updated=courses.map(c=>c.id===item.id?{...c,achete:newVal}:c);
     setCourses(updated);setCache("courses",updated);
     notionUpdate(item.id,{"Acheté":nCheck(newVal)});
+  };
+
+  const saveEditCourse=async()=>{
+    if(!editItem?.article)return;
+    const updated=courses.map(c=>c.id===editItem.id?{...editItem}:c);
+    setCourses(updated);setCache("courses",updated);
+    try{
+      await notionUpdate(editItem.id,{
+        "Article":nTitle(editItem.article),
+        "Catégorie":nSel(editItem.categorie),
+        "Quantité":nText(editItem.quantite||""),
+      });
+      toast("Article modifié ✓");
+    }catch(e){logError("courseEdit",e,{item:editItem.article});toast("Erreur");}
+    setEditItem(null);setEditCatTouched(false);
   };
 
   const deleteAchetes=async()=>{
@@ -2186,6 +2223,7 @@ function CoursesTab({toast}){
                   </div>
                   <span style={{flex:1,fontSize:14,color:"#0F172A",textDecoration:item.achete?"line-through":"none"}}>{item.article}</span>
                   <span style={{fontSize:12,color:"#64748B"}}>{item.quantite}</span>
+                  <button onClick={e=>{e.stopPropagation();setEditItem({...item});setEditCatTouched(false);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,opacity:0.5,padding:"0 2px"}}>✏️</button>
                   {sortBy==="categorie"&&item.recette&&<span style={{fontSize:10,color:"#64748B",background:"#F1F5F9",padding:"2px 6px",borderRadius:10}}>{item.recette}</span>}
                 </div>
               ))}
@@ -2196,16 +2234,45 @@ function CoursesTab({toast}){
 
       {showForm&&(
         <Modal title="Ajouter un article" onClose={()=>setShowForm(false)}>
-          <Field label="Article"><input style={inputStyle} value={form.article} onChange={e=>{
-            const val=e.target.value;
-            setForm(f=>({...f,article:val,categorie:categorieTouched?f.categorie:guessCategory(val)}));
-          }} placeholder="Ex: Tomates"/></Field>
+          <Field label="Article">
+            <div style={{position:"relative"}}>
+              <input style={inputStyle} value={form.article} onChange={e=>{
+                const val=e.target.value;
+                setForm(f=>({...f,article:val,categorie:categorieTouched?f.categorie:guessCategory(val)}));
+                updateSuggestions(val);
+              }} placeholder="Ex: Tomates" autoComplete="off"/>
+              {suggestions.length>0&&(
+                <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:10,background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:8,marginTop:4,boxShadow:"0 4px 12px rgba(0,0,0,0.08)",overflow:"hidden"}}>
+                  {suggestions.map((s,i)=>(
+                    <button key={i} onClick={()=>{setForm(f=>({...f,article:s.article,categorie:categorieTouched?f.categorie:s.categorie}));setSuggestions([]);}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,width:"100%",padding:"10px 12px",background:"none",border:"none",borderBottom:i<suggestions.length-1?"1px solid #F1F5F9":"none",cursor:"pointer",textAlign:"left",fontSize:14,color:"#0F172A"}}>
+                      <span>{s.article}</span>
+                      <span style={{fontSize:11,color:"#94A3B8"}}>{s.categorie}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Field>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <Field label="Catégorie"><select style={inputStyle} value={form.categorie} onChange={e=>{setCategorieTouched(true);setForm(f=>({...f,categorie:e.target.value}));}}>{Object.keys(CAT_COLORS).map(c=><option key={c}>{c}</option>)}</select></Field>
             <Field label="Quantité"><input style={inputStyle} value={form.quantite} onChange={e=>setForm(f=>({...f,quantite:e.target.value}))} placeholder="500g..."/></Field>
           </div>
           <Field label="Recette (optionnel)"><input style={inputStyle} value={form.recette} onChange={e=>setForm(f=>({...f,recette:e.target.value}))} placeholder="Ex: Poulet rôti"/></Field>
           <button onClick={addItem} disabled={saving||!form.article} style={form.article?btnPrimary:btnDisabled}>{saving?"Ajout...":"Ajouter"}</button>
+        </Modal>
+      )}
+
+      {editItem&&(
+        <Modal title="Modifier l'article" onClose={()=>{setEditItem(null);setEditCatTouched(false);}}>
+          <Field label="Article"><input style={inputStyle} value={editItem.article} onChange={e=>{
+            const val=e.target.value;
+            setEditItem(d=>({...d,article:val,categorie:editCatTouched?d.categorie:guessCategory(val)}));
+          }} placeholder="Ex: Tomates"/></Field>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Field label="Catégorie"><select style={inputStyle} value={editItem.categorie} onChange={e=>{setEditCatTouched(true);setEditItem(d=>({...d,categorie:e.target.value}));}}>{Object.keys(CAT_COLORS).map(c=><option key={c}>{c}</option>)}</select></Field>
+            <Field label="Quantité"><input style={inputStyle} value={editItem.quantite||""} onChange={e=>setEditItem(d=>({...d,quantite:e.target.value}))} placeholder="500g..."/></Field>
+          </div>
+          <button onClick={saveEditCourse} disabled={!editItem.article} style={editItem.article?btnPrimary:btnDisabled}>Enregistrer</button>
         </Modal>
       )}
     </div>
