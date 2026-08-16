@@ -1495,6 +1495,15 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
   );
 }
 
+// Date par défaut pour la planification : aujourd'hui, ou demain s'il est 18:00 passé.
+// (Le soir, on planifie généralement pour le lendemain.)
+function defaultPlanningDate(){
+  const now=new Date();
+  const d=new Date(now);
+  if(now.getHours()>=18) d.setDate(d.getDate()+1);
+  return d.toISOString().split("T")[0];
+}
+
 function PlanningTab({toast}){
   const [planning,setPlanning]=useState([]);
   const [recettes,setRecettes]=useState([]);
@@ -1847,7 +1856,7 @@ function PlanningTab({toast}){
           <button onClick={()=>setShowWeekWizard(true)} title="Planifier ma semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:8,color:"#C2622D",cursor:"pointer",fontSize:13,fontWeight:600}}>
             🗓️<span className="btn-label"> Semaine</span>
           </button>
-          <button onClick={()=>{setForm(f=>({...f,date:"",queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/><span className="btn-label">Ajouter</span></button>
+          <button onClick={()=>{setForm(f=>({...f,date:defaultPlanningDate(),queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/><span className="btn-label">Ajouter</span></button>
         </div>
       </div>
 
