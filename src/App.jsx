@@ -112,24 +112,99 @@ function parseCourse(page){
 }
 
 // ── Ingredient parsing ────────────────────────────────────────────────────────
-function parseIngredients(text){
+// ══════════════════════════════════════════════════════════════════════════════
+// MODULE INGRÉDIENTS PARTAGÉ — un seul parser + normalisation, utilisé partout.
+// Évite la divergence entre le parser de la fiche recette et celui des courses.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Familles d'unités pour la conversion (on ne convertit JAMAIS entre familles).
+// Valeur = facteur vers l'unité de base de la famille.
+const UNIT_FAMILIES={
+  masse:{base:"g",units:{mg:0.001,g:1,kg:1000}},
+  volume:{base:"ml",units:{ml:1,cl:10,dl:100,l:1000}},
+  cuillere:{base:"càc",units:{"càc":1,"c.à.c":1,"c.à.c.":1,"càs":3,"c.à.s":3,"c.à.s.":3}}, // 1 càs = 3 càc
+};
+// Normalise une unité écrite en sa forme canonique (ou "" si inconnue/comptage).
+function canonUnit(u){
+  if(!u)return"";
+  const x=u.toLowerCase().replace(/\./g,"").replace(/\s/g,"");
+  const map={g:"g",kg:"kg",mg:"mg",ml:"ml",cl:"cl",dl:"dl",l:"l",
+    cas:"càs","càs":"càs",cac:"càc","càc":"càc",
+    cuillere:"càs",cuilleres:"càs","cuillère":"càs","cuillères":"càs",
+    tbsp:"càs",tsp:"càc",cup:"tasse",tasse:"tasse",
+    cm:"cm",mm:"mm",oz:"oz",lb:"lb",pincee:"pincée","pincée":"pincée",pincees:"pincée","pincées":"pincée",pieces:"pièces","pièces":"pièces","pièce":"pièces"};
+  return map[x]||u;
+}
+function unitFamily(canon){
+  for(const[fam,def]of Object.entries(UNIT_FAMILIES)){
+    if(canon in def.units)return fam;
+  }
+  return null;
+}
+
+// Parser canonique unique. Retourne {original, qty(number|null), unit(canon), name, scalable}.
+function parseOneIngredient(line){
+  const trimmed=(line||"").replace(/^[-•*]+\s*/,"").trim();
+  if(!trimmed)return{original:line,qty:null,unit:"",name:trimmed,scalable:false};
+  const m=trimmed.match(/^([\d.,/]+)\s*(kg|mg|ml|cl|dl|l|cm|mm|c\.?à\.?s\.?|c\.?à\.?c\.?|càs|càc|tasse|cuillères?|tbsp|tsp|cup|oz|lb|pincées?|pièces?|g)?(?=[\s,]|$)\s*(?:de |d'|du |des )?(.+)/i);
+  if(m){
+    const qty=parseFloat(m[1].replace(",","."));
+    const name=(m[3]||trimmed).trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
+    return{original:trimmed,qty:isNaN(qty)?null:qty,unit:canonUnit(m[2]||""),name,scalable:!isNaN(qty)};
+  }
+  return{original:trimmed,qty:null,unit:"",name:trimmed,scalable:false};
+}
+
+// Découpe un texte d'ingrédients en lignes (gère lignes ET blocs virgulés).
+function splitIngredientLines(text){
   if(!text)return[];
-  return text.split(/\n|,(?=\s*\d|\s*[A-ZÀ-Ö])/g)
-    .map(s=>s.trim()).filter(Boolean)
-    .map(line=>{
-      // Lookahead (pas \b) après le groupe unité : \b traite "." comme non-mot, donc après
-      // "c.à.s." suivi d'un espace il n'y a pas de frontière -> le point final restait collé
-      // au nom ("gousses" ok, mais "c.à.s." laissait ". huile d'olive"). Le lookahead est
-      // imbriqué dans le groupe optionnel pour ne s'appliquer que si une unité matche vraiment,
-      // sinon "2 gousses d'ail" échouerait aussi (rien après "2 " n'est espace/virgule/fin).
-      const match=line.match(/^([\d.,/]+)\s*(?:(g|kg|mg|ml|cl|l|dl|cm|mm|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)(?=\s|,|$))?\s*(.+)/i);
-      if(match){
-        const qty=parseFloat(match[1].replace(',','.'));
-        const cleanName=match[3].trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
-        return{original:line,qty,unit:match[2]||"",name:cleanName,scalable:!isNaN(qty)};
-      }
-      return{original:line,qty:null,unit:"",name:line,scalable:false};
-    });
+  let lines=text.split("\n").map(l=>l.trim()).filter(Boolean);
+  if(lines.length<=1&&(text.match(/,/g)||[]).length>=2){
+    lines=text.split(/,(?![^(]*\))/).map(l=>l.trim()).filter(Boolean);
+  }
+  return lines;
+}
+
+// Clé de normalisation pour DÉCIDER des fusions (jamais pour réécrire l'affichage).
+// Conservateur : minuscule + sans accents + singulier simple. Ne fusionne PAS les synonymes.
+function normalizeKey(name){
+  return(name||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/\s+/g," ").trim().replace(/s\b/g,""); // pluriels simples
+}
+
+// Combine deux quantités {qty,unit}. Convertit dans la même famille, sinon garde en summands.
+// Retourne une string d'affichage.
+function combineQuantities(a,b){
+  // a,b = {qty:number|null, unit:canon, raw:string}
+  const fa=a.unit?unitFamily(a.unit):null, fb=b.unit?unitFamily(b.unit):null;
+  if(a.qty!=null&&b.qty!=null&&fa&&fb&&fa===fb){
+    const def=UNIT_FAMILIES[fa];
+    const total=a.qty*def.units[a.unit]+b.qty*def.units[b.unit]; // en unité de base
+    // choisir une unité lisible : si >= 1000 base pour masse/volume, monter d'un cran
+    let unit=def.base, val=total;
+    if(fa==="masse"&&total>=1000){unit="kg";val=total/1000;}
+    else if(fa==="volume"&&total>=1000){unit="l";val=total/1000;}
+    else if(fa==="volume"&&total>=100&&total%100===0){unit="cl";val=total/10;}
+    else if(fa==="cuillere"){ // exprimer en càs si multiple de 3, sinon càc
+      if(total%3===0){unit="càs";val=total/3;} else {unit="càc";val=total;}
+    }
+    val=Math.round(val*100)/100;
+    return `${val} ${unit}`;
+  }
+  // même unité exacte sans famille (ex: "pièces", "gousses" comptées via nom) → somme si les deux ont qty et même unit
+  if(a.qty!=null&&b.qty!=null&&a.unit===b.unit){
+    const val=Math.round((a.qty+b.qty)*100)/100;
+    return a.unit?`${val} ${a.unit}`:`${val}`;
+  }
+  // sinon : garder en summands lisibles
+  const sa=(a.raw||"").trim(), sb=(b.raw||"").trim();
+  if(sa&&sb&&sa!==sb)return `${sa} + ${sb}`;
+  return sa||sb||"";
+}
+
+function parseIngredients(text){
+  // Wrapper léger sur le module partagé (un seul parser dans toute l'app).
+  return splitIngredientLines(text).map(parseOneIngredient);
 }
 
 function scaleIngredients(ingredients,basePortion,newPortion){
@@ -1107,49 +1182,43 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
       const recetteNom=meal.recette||meal.repas;
       const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===recetteNom);
       if(!recetteData?.ingredients)continue;
-      // Découpe par lignes ; si les ingrédients sont un bloc séparé par des virgules
-      // (une seule ligne mais plusieurs virgules), on découpe aussi sur les virgules.
-      let lines=recetteData.ingredients.split("\n").filter(l=>l.trim());
-      if(lines.length<=1&&(recetteData.ingredients.match(/,/g)||[]).length>=2){
-        lines=recetteData.ingredients.split(/,(?![^(]*\))/).map(l=>l.trim()).filter(Boolean); // virgules hors parenthèses
-      }
-      for(const line of lines){
-        const trimmed=line.replace(/^[-•*]+\s*/,"").trim();
-        if(!trimmed)continue;
-        // Capture: "200g tomates" | "3 càs huile" | "500 g farine" | "2 oeufs"
-        // Regex : capture quantité+unité puis nom — "g" unité seulement si suivi d'espace ou fin
-        // Regex robuste : g unité seulement si suivi d'espace/fin, jamais au milieu d'un mot
-        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:kg|mg|ml|cl|dl|l|L|cm|mm|càs|càc|c\.?à\.?s\.?|c\.?à\.?c\.?|cup|oz|lb|pièces?|g)?(?=[\s,]|$))?\s*(?:de |d'|du |des )?(.+)/i);
-        const qty=(parts?.[1]||"").trim();
-        const nom=(parts?.[2]||trimmed).trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
-        if(!nom)continue;
-        list.push({nom,qty,recette:recetteNom,categorie:guessCategory(nom),semaine:`Sem. du ${semaine}`});
+      // Parser partagé : découpe (lignes ou bloc virgulé) + extraction canonique.
+      for(const parsed of splitIngredientLines(recetteData.ingredients).map(parseOneIngredient)){
+        if(!parsed.name)continue;
+        list.push({
+          nom:parsed.name,
+          qty:parsed.qty,          // number|null
+          unit:parsed.unit,        // unité canonique
+          raw:parsed.original,     // texte d'origine (pour summands lisibles)
+          recette:recetteNom,
+          categorie:guessCategory(parsed.name),
+          semaine:`Sem. du ${semaine}`,
+        });
       }
     }
-    // Agrégation : fusionner les ingrédients identiques (ex: 400g + 200g tomates = 600g)
-    const normalize=s=>s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/s$/,"").trim();
+    // Agrégation : clé normalisée conservatrice, quantités combinées par famille d'unités.
     const merged={};
     for(const item of list){
-      const key=normalize(item.nom);
+      const key=normalizeKey(item.nom);
       if(!merged[key]){
         merged[key]={...item,recettes:[item.recette]};
       } else {
         const m=merged[key];
         if(!m.recettes.includes(item.recette))m.recettes.push(item.recette);
-        // Additionner si même unité (ex: "400g" + "200g")
-        const q1=m.qty.match(/^([\d,.\/]+)\s*(\S*)/);
-        const q2=item.qty.match(/^([\d,.\/]+)\s*(\S*)/);
-        if(q1&&q2&&q1[2]===q2[2]&&q1[2]!==""){
-          const sum=parseFloat(q1[1].replace(",","."))+parseFloat(q2[1].replace(",","."));
-          m.qty=`${Math.round(sum*100)/100}${q1[2]}`;
-        } else if(item.qty&&m.qty&&item.qty!==m.qty){
-          m.qty=`${m.qty} + ${item.qty}`;
-        } else if(item.qty&&!m.qty){
-          m.qty=item.qty;
-        }
+        m.qtyDisplay=combineQuantities(
+          {qty:m.qty??null,unit:m.unit||"",raw:m.qtyDisplay||m.raw||(m.qty!=null?`${m.qty} ${m.unit}`.trim():"")},
+          {qty:item.qty??null,unit:item.unit||"",raw:item.raw||(item.qty!=null?`${item.qty} ${item.unit}`.trim():"")}
+        );
+        // après une fusion, on ne garde plus une qty numérique unique fiable
+        m.qty=null;m.unit="";
       }
     }
-    return Object.values(merged).map(m=>({...m,recette:m.recettes.join(", ")}));
+    return Object.values(merged).map(m=>({
+      ...m,
+      // quantité d'affichage : soit le résultat combiné, soit la forme simple d'origine
+      qty:m.qtyDisplay||(m.qty!=null?`${m.qty} ${m.unit}`.trim():(m.raw&&m.raw!==m.nom?m.raw.replace(m.nom,"").trim():"")),
+      recette:m.recettes.join(", "),
+    }));
   };
 
   // Déduplication recettes par nom
