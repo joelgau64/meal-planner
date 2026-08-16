@@ -122,7 +122,7 @@ function parseIngredients(text){
       // au nom ("gousses" ok, mais "c.à.s." laissait ". huile d'olive"). Le lookahead est
       // imbriqué dans le groupe optionnel pour ne s'appliquer que si une unité matche vraiment,
       // sinon "2 gousses d'ail" échouerait aussi (rien après "2 " n'est espace/virgule/fin).
-      const match=line.match(/^([\d.,/]+)\s*(?:(g|kg|ml|cl|l|dl|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)(?=\s|,|$))?\s*(.+)/i);
+      const match=line.match(/^([\d.,/]+)\s*(?:(g|kg|mg|ml|cl|l|dl|cm|mm|c\.?à\.?s\.?|c\.?à\.?c\.?|tasse|cuillère[s]?|tbsp|tsp|cup|oz|lb|pincée[s]?)(?=\s|,|$))?\s*(.+)/i);
       if(match){
         const qty=parseFloat(match[1].replace(',','.'));
         const cleanName=match[3].trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
