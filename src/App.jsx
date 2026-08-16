@@ -1107,14 +1107,19 @@ function CoursesModal({onClose,coursesSelection,setCoursesSelection,recettes,gro
       const recetteNom=meal.recette||meal.repas;
       const recetteData=recettes.find(r=>r.id===meal.recette_id||r.nom===recetteNom);
       if(!recetteData?.ingredients)continue;
-      const lines=recetteData.ingredients.split("\n").filter(l=>l.trim());
+      // Découpe par lignes ; si les ingrédients sont un bloc séparé par des virgules
+      // (une seule ligne mais plusieurs virgules), on découpe aussi sur les virgules.
+      let lines=recetteData.ingredients.split("\n").filter(l=>l.trim());
+      if(lines.length<=1&&(recetteData.ingredients.match(/,/g)||[]).length>=2){
+        lines=recetteData.ingredients.split(/,(?![^(]*\))/).map(l=>l.trim()).filter(Boolean); // virgules hors parenthèses
+      }
       for(const line of lines){
         const trimmed=line.replace(/^[-•*]+\s*/,"").trim();
         if(!trimmed)continue;
         // Capture: "200g tomates" | "3 càs huile" | "500 g farine" | "2 oeufs"
         // Regex : capture quantité+unité puis nom — "g" unité seulement si suivi d'espace ou fin
         // Regex robuste : g unité seulement si suivi d'espace/fin, jamais au milieu d'un mot
-        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:(?:kg|ml|L|l|cl|càs|càc|cup|oz|pièces?|g)(?=[\s,]|$))?\s*(?:de |d'|du |des )?)?(.+)/i);
+        const parts=trimmed.match(/^(\d[\d,./]*\s*(?:kg|mg|ml|cl|dl|l|L|cm|mm|càs|càc|c\.?à\.?s\.?|c\.?à\.?c\.?|cup|oz|lb|pièces?|g)?(?=[\s,]|$))?\s*(?:de |d'|du |des )?(.+)/i);
         const qty=(parts?.[1]||"").trim();
         const nom=(parts?.[2]||trimmed).trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
         if(!nom)continue;
