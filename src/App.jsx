@@ -536,6 +536,9 @@ function CookingMode({recette,onClose}){
 function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete,onUpdate,planningEntry,onCancelPlanning,onRequeuePlanning}){
   const [confirmDelete,setConfirmDelete]=useState(false);
   const [deleting,setDeleting]=useState(false);
+  const [photoCandidates,setPhotoCandidates]=useState(null); // null=fermé, []=recherche vide
+  const [photoSearching,setPhotoSearching]=useState(false);
+  const [localPhoto,setLocalPhoto]=useState(recette.photo||"");
   const basePortion=recette.portions||DEFAULT_PORTIONS;
   const [portions,setPortions]=useState(basePortion);
   const [selectedIngredients,setSelectedIngredients]=useState(null);
@@ -639,9 +642,53 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
     );
   }
 
+  const searchPhoto=async()=>{
+    setPhotoSearching(true);setPhotoCandidates(null);
+    try{
+      const r=await fetch("/api/recipe-image?q="+encodeURIComponent(recette.nom));
+      const d=await r.json();
+      setPhotoCandidates(d.candidates||[]);
+    }catch(e){logError("searchPhoto",e,{recette:recette.nom});setPhotoCandidates([]);}
+    setPhotoSearching(false);
+  };
+  const approvePhoto=async(url)=>{
+    setLocalPhoto(url);setPhotoCandidates(null);
+    try{
+      await notionUpdate(recette.id,{"Photo":nUrl(url)});
+      toast("Photo ajoutée ✓");
+      onUpdate&&onUpdate(recette.id,{photo:url});
+    }catch(e){logError("approvePhoto",e,{recette:recette.nom});toast("Erreur enregistrement photo");}
+  };
+
   return(
     <Modal title={recette.nom} onClose={onClose} full>
-      {recette.photo&&<img src={recette.photo} alt={recette.nom} style={{width:"100%",height:220,objectFit:"cover",borderRadius:10,marginBottom:16}} onError={e=>e.target.style.display="none"}/>}
+      {localPhoto
+        ?<img src={localPhoto} alt={recette.nom} style={{width:"100%",height:220,objectFit:"cover",borderRadius:10,marginBottom:16}} onError={e=>e.target.style.display="none"}/>
+        :<button onClick={searchPhoto} disabled={photoSearching} style={{width:"100%",padding:"14px",marginBottom:16,background:"#FFF7ED",border:"1px dashed #FDBA74",borderRadius:10,color:"#C2622D",fontWeight:600,fontSize:13,cursor:"pointer"}}>{photoSearching?"🔍 Recherche d'images…":"✨ Trouver une photo pour cette recette"}</button>
+      }
+
+      {photoCandidates!==null&&(
+        <div style={{position:"fixed",inset:0,zIndex:2700,background:"rgba(15,23,42,0.7)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setPhotoCandidates(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#FFFFFF",borderRadius:16,maxWidth:560,width:"100%",maxHeight:"85vh",overflow:"auto",padding:18}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <h3 style={{margin:0,fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>Choisis une photo</h3>
+              <button onClick={()=>setPhotoCandidates(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#94A3B8",fontSize:18}}>✕</button>
+            </div>
+            <p style={{fontSize:12,color:"#64748B",margin:"0 0 12px"}}>Résultats web pour « {recette.nom} ». Tape une image pour l'utiliser.</p>
+            {photoCandidates.length===0?(
+              <div style={{textAlign:"center",padding:"24px",color:"#94A3B8",fontSize:13}}>Aucune image trouvée. Réessaie ou ajoute une photo manuellement via ✏️ Modifier.</div>
+            ):(
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
+                {photoCandidates.map((c,i)=>(
+                  <button key={i} onClick={()=>approvePhoto(c.url)} style={{padding:0,border:"1px solid #E2E8F0",borderRadius:10,overflow:"hidden",cursor:"pointer",background:"#F8FAFC",aspectRatio:"4/3"}}>
+                    <img src={c.thumb} alt={c.title} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}} onError={e=>{e.target.parentElement.style.display="none";}}/>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Header info */}
       <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
