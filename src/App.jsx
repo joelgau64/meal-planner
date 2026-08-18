@@ -539,6 +539,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
   const [photoCandidates,setPhotoCandidates]=useState(null); // null=fermé, []=recherche vide
   const [photoSearching,setPhotoSearching]=useState(false);
   const [localPhoto,setLocalPhoto]=useState(recette.photo||"");
+  const [photoBroken,setPhotoBroken]=useState(false);
   const basePortion=recette.portions||DEFAULT_PORTIONS;
   const [portions,setPortions]=useState(basePortion);
   const [selectedIngredients,setSelectedIngredients]=useState(null);
@@ -662,9 +663,12 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
 
   return(
     <Modal title={recette.nom} onClose={onClose} full>
-      {localPhoto
-        ?<img src={localPhoto} alt={recette.nom} style={{width:"100%",height:220,objectFit:"cover",borderRadius:10,marginBottom:16}} onError={e=>e.target.style.display="none"}/>
-        :<button onClick={searchPhoto} disabled={photoSearching} style={{width:"100%",padding:"14px",marginBottom:16,background:"#FFF7ED",border:"1px dashed #FDBA74",borderRadius:10,color:"#C2622D",fontWeight:600,fontSize:13,cursor:"pointer"}}>{photoSearching?"🔍 Recherche d'images…":"✨ Trouver une photo pour cette recette"}</button>
+      {(localPhoto&&!photoBroken)
+        ?<div style={{position:"relative",marginBottom:16}}>
+           <img src={localPhoto} alt={recette.nom} style={{width:"100%",height:220,objectFit:"cover",borderRadius:10,display:"block"}} onError={()=>setPhotoBroken(true)}/>
+           <button onClick={searchPhoto} disabled={photoSearching} title="Changer la photo" style={{position:"absolute",bottom:8,right:8,background:"rgba(15,23,42,0.75)",color:"#fff",border:"none",borderRadius:20,padding:"6px 12px",fontSize:11,fontWeight:600,cursor:"pointer"}}>{photoSearching?"🔍…":"✨ Changer"}</button>
+         </div>
+        :<button onClick={searchPhoto} disabled={photoSearching} style={{width:"100%",padding:"14px",marginBottom:16,background:"#FFF7ED",border:"1px dashed #FDBA74",borderRadius:10,color:"#C2622D",fontWeight:600,fontSize:13,cursor:"pointer"}}>{photoSearching?"🔍 Recherche d'images…":(localPhoto&&photoBroken)?"⚠️ Photo cassée — en trouver une autre":"✨ Trouver une photo pour cette recette"}</button>
       }
 
       {photoCandidates!==null&&(
