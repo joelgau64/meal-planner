@@ -71,6 +71,7 @@ export default async function handler(req, res) {
         ingredients_len: (p.properties['Ingrédients']?.rich_text?.[0]?.plain_text || '').length,
         instructions_len: (p.properties['Instructions']?.rich_text?.[0]?.plain_text || '').length,
         source: p.properties['Source']?.url || '',
+        photo: p.properties['Photo']?.url || '(vide)',
         commentaires: p.properties['Commentaires']?.rich_text?.[0]?.plain_text || '',
       }));
       return res.status(200).json({ what, q: q || null, count: rows.length, rows });
