@@ -463,7 +463,7 @@ function StepTimer({seconds,stepIdx}){
   );
 }
 
-function CookingMode({recette,onClose,planningEntry,onCookComplete}){
+function CookingMode({recette,onClose,planningEntry,onCookComplete,toast}){
   const instructions=recette.instructions
     ?recette.instructions.split("\n").filter(s=>s.trim()).map(s=>s.replace(/^\d+\.\s*/,"").trim()).filter(Boolean)
     :[];
@@ -487,9 +487,14 @@ function CookingMode({recette,onClose,planningEntry,onCookComplete}){
     setCompleting(true);
     // Marquer le planning comme Cuisiné + incrémenter Fois cuisinée
     try{
-      if(planningEntry?.id) await notionUpdate(planningEntry.id,{"Cuisiné":nCheck(true)});
-      if(recette.id) await notionUpdate(recette.id,{"Fois cuisinée":nNum((recette.fois_cuisinee||0)+1),"Dernière cuisson":nDate(new Date().toISOString().split("T")[0])});
-    }catch(e){logError("cookComplete",e,{recette:recette.nom});}
+      let r1;
+      if(planningEntry?.id) r1=await notionUpdate(planningEntry.id,{"Cuisiné":nCheck(true)});
+      if(r1?.object==="error") throw new Error(r1.message||"Échec Cuisiné");
+      if(recette.id){
+        const r2=await notionUpdate(recette.id,{"Fois cuisinée":nNum((recette.fois_cuisinee||0)+1),"Dernière cuisson":nDate(new Date().toISOString().split("T")[0])});
+        if(r2?.object==="error") throw new Error(r2.message||"Échec Fois cuisinée");
+      }
+    }catch(e){logError("cookComplete",e,{recette:recette.nom});toast&&toast("Erreur : "+e.message);setCompleting(false);return;}
     // Proposer de retirer les protéines du frigo concernées
     const matches=findFridgeMatches();
     if(matches.length>0){ setFridgeConfirm(matches); setCompleting(false); }
@@ -664,7 +669,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
     setSelectedIngredients(selected);
   };
 
-  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)} planningEntry={planningEntry} onCookComplete={()=>{toast&&toast("Repas validé ✓");onUpdate&&onUpdate(recette.id,{});onClose&&onClose();}}/>;
+  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)} planningEntry={planningEntry} toast={toast} onCookComplete={()=>{toast&&toast("Repas validé ✓");onClose&&onClose();}}/>;
 
   if(editing){
     return(
