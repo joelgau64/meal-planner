@@ -463,11 +463,52 @@ function StepTimer({seconds,stepIdx}){
   );
 }
 
-function CookingMode({recette,onClose}){
+function CookingMode({recette,onClose,planningEntry,onCookComplete}){
   const instructions=recette.instructions
     ?recette.instructions.split("\n").filter(s=>s.trim()).map(s=>s.replace(/^\d+\.\s*/,"").trim()).filter(Boolean)
     :[];
   const ingredients=splitIngredientLines(recette.ingredients);
+  const [completing,setCompleting]=useState(false);
+  const [fridgeConfirm,setFridgeConfirm]=useState(null); // items frigo à confirmer
+
+  // Cherche dans le frigo (cache) les protéines mentionnées par la recette.
+  const findFridgeMatches=()=>{
+    const frigo=getCached("frigo")||[];
+    const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+    const hay=norm(recette.nom)+" "+norm(recette.ingredients);
+    return frigo.filter(item=>{
+      const kw=norm(item.article).split(" ")[0];
+      return kw&&hay.includes(kw);
+    });
+  };
+
+  const handleComplete=async()=>{
+    if(completing)return;
+    setCompleting(true);
+    // Marquer le planning comme Cuisiné + incrémenter Fois cuisinée
+    try{
+      if(planningEntry?.id) await notionUpdate(planningEntry.id,{"Cuisiné":nCheck(true)});
+      if(recette.id) await notionUpdate(recette.id,{"Fois cuisinée":nNum((recette.fois_cuisinee||0)+1),"Dernière cuisson":nDate(new Date().toISOString().split("T")[0])});
+    }catch(e){logError("cookComplete",e,{recette:recette.nom});}
+    // Proposer de retirer les protéines du frigo concernées
+    const matches=findFridgeMatches();
+    if(matches.length>0){ setFridgeConfirm(matches); setCompleting(false); }
+    else { onCookComplete&&onCookComplete(); onClose(); }
+  };
+
+  const confirmFridgeRemoval=async(remove)=>{
+    if(remove&&fridgeConfirm){
+      const frigo=getCached("frigo")||[];
+      const ids=new Set(fridgeConfirm.map(m=>m.id));
+      setCache("frigo",frigo.filter(f=>!ids.has(f.id)));
+      for(const item of fridgeConfirm){
+        try{await notionUpdate(item.id,{"Consommé":nCheck(true)});}catch(e){logError("cookFridge",e,{item:item.article});}
+      }
+    }
+    setFridgeConfirm(null);
+    onCookComplete&&onCookComplete();
+    onClose();
+  };
   const total=instructions.length;
 
   return(
@@ -520,10 +561,35 @@ function CookingMode({recette,onClose}){
           </div>
 
           {/* Fin */}
-          <div style={{marginTop:24,padding:"20px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:12,textAlign:"center"}}>
-            <div style={{fontSize:28,marginBottom:6}}>🎉</div>
-            <div style={{fontSize:15,fontWeight:700,color:"#065F46"}}>Bon appétit !</div>
-          </div>
+          {planningEntry?(
+            <button onClick={handleComplete} disabled={completing} style={{width:"100%",marginTop:24,padding:"20px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:12,textAlign:"center",cursor:"pointer"}}>
+              <div style={{fontSize:28,marginBottom:6}}>🎉</div>
+              <div style={{fontSize:15,fontWeight:700,color:"#065F46"}}>{completing?"Enregistrement…":"Bon appétit ! · Marquer comme cuisiné"}</div>
+              <div style={{fontSize:11,color:"#16A34A",marginTop:4}}>Valide le repas et met à jour le frigo</div>
+            </button>
+          ):(
+            <div style={{marginTop:24,padding:"20px",background:"#F0FDF4",border:"1px solid #BBF7D0",borderRadius:12,textAlign:"center"}}>
+              <div style={{fontSize:28,marginBottom:6}}>🎉</div>
+              <div style={{fontSize:15,fontWeight:700,color:"#065F46"}}>Bon appétit !</div>
+            </div>
+          )}
+          {fridgeConfirm&&(
+            <div style={{position:"fixed",inset:0,zIndex:3000,background:"rgba(15,23,42,0.7)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+              <div style={{background:"#FFFFFF",borderRadius:16,maxWidth:440,width:"100%",padding:20}}>
+                <h3 style={{margin:"0 0 8px",fontSize:16,fontWeight:700,fontFamily:"'Playfair Display',serif"}}>Mettre à jour le frigo ?</h3>
+                <p style={{fontSize:13,color:"#64748B",margin:"0 0 12px"}}>Tu as cuisiné cette recette. Retirer {fridgeConfirm.length>1?"ces produits":"ce produit"} du frigo ?</p>
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+                  {fridgeConfirm.map(m=>(
+                    <div key={m.id} style={{padding:"8px 12px",background:"#F8FAFC",borderRadius:8,fontSize:14,fontWeight:600,color:"#0F172A"}}>{m.article}{m.forme&&m.forme!=="Autre"?` · ${m.forme}`:""}</div>
+                  ))}
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>confirmFridgeRemoval(false)} style={{flex:1,padding:"12px",background:"#F1F5F9",border:"none",borderRadius:10,color:"#475569",fontWeight:600,fontSize:14,cursor:"pointer"}}>Garder</button>
+                  <button onClick={()=>confirmFridgeRemoval(true)} style={{flex:1,padding:"12px",background:"#16A34A",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>Retirer du frigo</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -598,7 +664,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
     setSelectedIngredients(selected);
   };
 
-  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)}/>;
+  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)} planningEntry={planningEntry} onCookComplete={()=>{toast&&toast("Repas validé ✓");onUpdate&&onUpdate(recette.id,{});onClose&&onClose();}}/>;
 
   if(editing){
     return(
