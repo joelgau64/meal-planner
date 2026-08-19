@@ -467,9 +467,7 @@ function CookingMode({recette,onClose}){
   const instructions=recette.instructions
     ?recette.instructions.split("\n").filter(s=>s.trim()).map(s=>s.replace(/^\d+\.\s*/,"").trim()).filter(Boolean)
     :[];
-  const ingredients=recette.ingredients
-    ?recette.ingredients.split("\n").filter(s=>s.trim())
-    :[];
+  const ingredients=splitIngredientLines(recette.ingredients);
   const total=instructions.length;
 
   return(
