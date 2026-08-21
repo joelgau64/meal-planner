@@ -608,7 +608,7 @@ function CookingMode({recette,onClose,planningEntry,onCookComplete,toast}){
 }
 
 
-function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete,onUpdate,planningEntry,onCancelPlanning,onRequeuePlanning}){
+function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning,onDelete,onUpdate,planningEntry,onCancelPlanning,onRequeuePlanning,onCookComplete:onCookCompleteParent}){
   const [confirmDelete,setConfirmDelete]=useState(false);
   const [deleting,setDeleting]=useState(false);
   const [photoCandidates,setPhotoCandidates]=useState(null); // null=fermé, []=recherche vide
@@ -675,7 +675,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
     setSelectedIngredients(selected);
   };
 
-  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)} planningEntry={planningEntry} toast={toast} onCookComplete={()=>{toast&&toast("Repas validé ✓");onClose&&onClose();}}/>;
+  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)} planningEntry={planningEntry} toast={toast} onCookComplete={()=>{onCookCompleteParent&&onCookCompleteParent();onClose&&onClose();}}/>;
 
   if(editing){
     return(
@@ -2239,6 +2239,7 @@ function PlanningTab({toast}){
           onAddToCourses={()=>{}}
           onAddToPlanning={(r,p,mode)=>{setPlanningTargetFromDetail({recette:r,portions:p,mode});}}
           onUpdate={(updated)=>setSelectedMealRecette(updated)}
+          onCookComplete={()=>{toast&&toast("Repas validé ✓");setCache("planning",null);load(true);}}
           planningEntry={selectedMealPlanning}
           onCancelPlanning={cancelPlanningEntry}
           onRequeuePlanning={requeuePlanningEntry}
