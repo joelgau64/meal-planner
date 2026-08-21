@@ -485,15 +485,21 @@ function CookingMode({recette,onClose,planningEntry,onCookComplete,toast}){
   const handleComplete=async()=>{
     if(completing)return;
     setCompleting(true);
+    // Diagnostic visible : d'où vient l'appel, planningEntry présent ?
+    if(!planningEntry?.id){
+      toast&&toast("⚠️ Pas d'entrée planning (id manquant) — ouvre la recette depuis le planning");
+      setCompleting(false);
+      return;
+    }
     // Marquer le planning comme Cuisiné + incrémenter Fois cuisinée
     try{
-      let r1;
-      if(planningEntry?.id) r1=await notionUpdate(planningEntry.id,{"Cuisiné":nCheck(true)});
+      const r1=await notionUpdate(planningEntry.id,{"Cuisiné":nCheck(true)});
       if(r1?.object==="error") throw new Error(r1.message||"Échec Cuisiné");
       if(recette.id){
         const r2=await notionUpdate(recette.id,{"Fois cuisinée":nNum((recette.fois_cuisinee||0)+1),"Dernière cuisson":nDate(new Date().toISOString().split("T")[0])});
         if(r2?.object==="error") throw new Error(r2.message||"Échec Fois cuisinée");
       }
+      toast&&toast("✓ Marqué cuisiné");
     }catch(e){logError("cookComplete",e,{recette:recette.nom});toast&&toast("Erreur : "+e.message);setCompleting(false);return;}
     // Proposer de retirer les protéines du frigo concernées
     const matches=findFridgeMatches();
