@@ -726,7 +726,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
     try{
       await notionUpdate(recette.id,{"Photo":nUrl(url)});
       toast("Photo ajoutée ✓");
-      onUpdate&&onUpdate(recette.id,{photo:url});
+      onUpdate&&onUpdate({...recette,photo:url});
     }catch(e){logError("approvePhoto",e,{recette:recette.nom});toast("Erreur enregistrement photo");}
   };
 
