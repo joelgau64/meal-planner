@@ -463,11 +463,18 @@ function StepTimer({seconds,stepIdx}){
   );
 }
 
-function CookingMode({recette,onClose,planningEntry,onCookComplete,toast}){
+function CookingMode({recette,scaled,portions,onClose,planningEntry,onCookComplete,toast}){
   const instructions=recette.instructions
     ?recette.instructions.split("\n").filter(s=>s.trim()).map(s=>s.replace(/^\d+\.\s*/,"").trim()).filter(Boolean)
     :[];
-  const ingredients=splitIngredientLines(recette.ingredients);
+  // Utilise les quantités déjà recalculées (scaled) passées par RecipeDetailModal,
+  // pour ne pas revenir aux quantités d'origine de la recette. Fallback sur le texte
+  // brut si scaled n'est pas fourni (ex: futur appel sans passer par le détail).
+  const ingredients=scaled&&scaled.length
+    ?scaled.map(ing=>ing.scalable
+      ?`${ing.name} — ${ing.displayQty||ing.qty}${ing.unit?" "+ing.unit:""}`
+      :(ing.original||ing.name))
+    :splitIngredientLines(recette.ingredients);
   const [completing,setCompleting]=useState(false);
   const [fridgeConfirm,setFridgeConfirm]=useState(null); // items frigo à confirmer
 
@@ -531,7 +538,7 @@ function CookingMode({recette,onClose,planningEntry,onCookComplete,toast}){
           <div style={{fontSize:10,color:"#94A3B8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em"}}>Mode cuisine</div>
           <div style={{fontSize:14,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display',serif"}}>{recette.nom}</div>
         </div>
-        <span style={{fontSize:12,color:"#94A3B8"}}>{recette.temps} min · {recette.portions||4} pers.</span>
+        <span style={{fontSize:12,color:"#94A3B8"}}>{recette.temps} min · {portions||recette.portions||4} pers.</span>
       </div>
 
       {/* Scroll unique */}
@@ -675,7 +682,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
     setSelectedIngredients(selected);
   };
 
-  if(cookingMode) return <CookingMode recette={recette} onClose={()=>setCookingMode(false)} planningEntry={planningEntry} toast={toast} onCookComplete={()=>{onCookCompleteParent&&onCookCompleteParent();onClose&&onClose();}}/>;
+  if(cookingMode) return <CookingMode recette={recette} scaled={scaled} portions={portions} onClose={()=>setCookingMode(false)} planningEntry={planningEntry} toast={toast} onCookComplete={()=>{onCookCompleteParent&&onCookCompleteParent();onClose&&onClose();}}/>;
 
   if(editing){
     return(
