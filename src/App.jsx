@@ -1146,7 +1146,12 @@ function AddRecipeModal({onClose,onSaved}){
     }
     if(r.object==="skip"){
       alert("\""+form.nom+"\" existe déjà dans tes recettes — pas de doublon créé.");
-      onClose();
+      if(queueTotal>1){
+        // Mode lot : ne pas fermer, passer à la photo suivante
+        await advanceQueue();
+      } else {
+        onClose();
+      }
       return;
     }
     setCache("recettes",null);
