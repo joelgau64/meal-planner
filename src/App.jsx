@@ -1009,10 +1009,11 @@ function AddToPlanningModal({recette,portions,mode,onClose,toast}){
 }
 
 // ── Recipe Form ───────────────────────────────────────────────────────────────
-function RecipeForm({form,setForm,saving,onSave,analyzing}){
+function RecipeForm({form,setForm,saving,onSave,analyzing,duplicateWarning}){
   const isReady=form.nom&&!analyzing&&!saving;
   return(
     <>
+      {duplicateWarning&&<div style={{marginBottom:12,padding:"10px 14px",background:"#FEF2F2",border:"1px solid #FCA5A5",borderRadius:10,fontSize:13,color:"#B91C1C",fontWeight:600}}>⚠️ "{form.nom}" existe déjà dans tes recettes — pas de doublon créé si tu sauvegardes.</div>}
       <Field label="Nom"><input style={inputStyle} value={form.nom} onChange={e=>setForm(f=>({...f,nom:e.target.value}))} placeholder="Ex: Poulet rôti aux herbes"/></Field>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <Field label="Catégorie">
@@ -1059,17 +1060,35 @@ function AddRecipeModal({onClose,onSaved}){
   const [photoQueue,setPhotoQueue]=useState([]); // files en attente de review
   const [queueTotal,setQueueTotal]=useState(0);
   const [queueDone,setQueueDone]=useState(0);
+  const [duplicateNom,setDuplicateNom]=useState(null); // nom déjà en base, détecté à l'analyse
+
+  // Vérifie tout de suite (dès l'analyse) si ce nom existe déjà dans Notion,
+  // au lieu d'attendre le clic sur Sauvegarder.
+  const checkDuplicate=async(nom)=>{
+    if(!nom){setDuplicateNom(null);return;}
+    try{
+      const existing=await notionQuery(DB_RECETTES,{property:"Nom",title:{equals:nom}});
+      setDuplicateNom(existing.results?.length>0?nom:null);
+    }catch(e){
+      // Silencieux : le dédoublonnage reste appliqué côté save() en filet de sécurité.
+      logError("AddRecipeModal.checkDuplicate",e,{nom});
+    }
+  };
 
   const extractOneFile=async(file)=>{
     if(!file||!file.type.startsWith("image/"))return;
     setForm({...EMPTY_FORM});
+    setDuplicateNom(null);
     setPhotoPreview(URL.createObjectURL(file));
     setAnalyzing(true);
     const reader=new FileReader();
     reader.onload=async(e)=>{
       const base64=e.target.result.split(",")[1];
       const result=await claudeVision(RECIPE_JSON_PROMPT,base64,file.type);
-      if(result)setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,photoUrl:f.photoUrl}));
+      if(result){
+        setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,photoUrl:f.photoUrl}));
+        await checkDuplicate(result.nom);
+      }
       setAnalyzing(false);
     };
     reader.readAsDataURL(file);
@@ -1110,9 +1129,11 @@ function AddRecipeModal({onClose,onSaved}){
   const fetchFromUrl=async()=>{
     if(!url)return;
     setAnalyzing(true);
+    setDuplicateNom(null);
     const result=await extractRecipe(url);
     if(result){
       setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,sourceUrl:url,photoUrl:result.image||f.photoUrl}));
+      await checkDuplicate(result.nom);
     }else{
       alert("Impossible d'extraire la recette depuis cette URL (timeout ou erreur). Réessaie, ou utilise la saisie manuelle.");
     }
@@ -1122,9 +1143,13 @@ function AddRecipeModal({onClose,onSaved}){
   const generateFromPrompt=async()=>{
     if(!prompt)return;
     setAnalyzing(true);
+    setDuplicateNom(null);
     const isIng=method==="ingredients";
     const result=await claudeJSON("Tu es un chef cuisinier créatif français. Retourne UNIQUEMENT un JSON valide, sans backticks.",isIng?`L'utilisateur a ces ingrédients: "${prompt}". Propose une recette créative.\n\n${RECIPE_JSON_PROMPT}`:`Génère une recette pour: "${prompt}"\n\n${RECIPE_JSON_PROMPT}`);
-    if(result)setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags}));
+    if(result){
+      setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags}));
+      await checkDuplicate(result.nom);
+    }
     setAnalyzing(false);
   };
 
@@ -1174,11 +1199,11 @@ function AddRecipeModal({onClose,onSaved}){
     return(<Modal title="Recette depuis une photo" onClose={onClose} wide><input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:"none"}} onChange={e=>handlePhotoFiles(e.target.files)}/><input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handlePhotoFile(e.target.files[0])}/>{backBtn}{queueTotal>1&&<div style={{marginBottom:12,padding:"10px 14px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}><span style={{fontSize:13,fontWeight:700,color:"#C2622D"}}>📚 Lot : recette {queueDone+1} sur {queueTotal}</span><span style={{fontSize:11,color:"#9A6A4A"}}>{photoQueue.length} en attente</span></div>}<div onClick={()=>fileInputRef.current?.click()} onDrop={e=>{e.preventDefault();handlePhotoFile(e.dataTransfer.files[0]);}} onDragOver={e=>e.preventDefault()} style={{marginBottom:20,borderRadius:12,overflow:"hidden",cursor:"pointer",border:`2px dashed ${photoPreview?"#F59E0B":"#E2E8F0"}`,background:"#F1F5F9"}}>{photoPreview?(<div style={{position:"relative"}}><img src={photoPreview} alt="preview" style={{width:"100%",height:180,objectFit:"cover",display:"block"}}/>{analyzing&&<div style={{position:"absolute",inset:0,background:"rgba(2,6,23,0.8)",display:"flex",alignItems:"center",justifyContent:"center",gap:12}}><div style={{animation:"spin 1s linear infinite",color:"#F59E0B"}}><Icon name="loader" size={24}/></div><span style={{color:"#FDE68A",fontSize:13,fontWeight:600}}>Analyse...</span></div>}{!analyzing&&<div style={{position:"absolute",bottom:8,left:8,background:"#4ADE80",borderRadius:20,padding:"4px 12px",fontSize:11,fontWeight:700,color:"#022c22"}}>✓ Recette reconnue</div>}</div>):(<div style={{padding:32,display:"flex",flexDirection:"column",alignItems:"center",gap:8,textAlign:"center"}}><div style={{width:48,height:48,borderRadius:"50%",background:"#F1F5F9",display:"flex",alignItems:"center",justifyContent:"center",color:"#F59E0B"}}><Icon name="camera" size={22}/></div><div style={{fontSize:13,fontWeight:600,color:"#64748B"}}>Photo du plat ou livre de recette</div></div>)}</div><div style={{display:"flex",gap:8,marginBottom:20}}><button onClick={e=>{e.stopPropagation();cameraInputRef.current?.click();}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"12px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="camera" size={16}/> Prendre une photo</button><button onClick={e=>{e.stopPropagation();fileInputRef.current?.click();}} style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"12px",background:"#FFFFFF",border:"1px solid #E2E8F0",borderRadius:10,color:"#475569",fontWeight:600,fontSize:13,cursor:"pointer"}}>🖼️ Choisir des fichiers</button></div>{(photoPreview&&!analyzing)&&<RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing}/>}{queueTotal>1&&!analyzing&&photoPreview&&<button onClick={advanceQueue} style={{width:"100%",marginTop:8,padding:"10px",background:"transparent",border:"1px solid #E2E8F0",borderRadius:10,color:"#64748B",fontSize:13,fontWeight:600,cursor:"pointer"}}>⏭ Ignorer cette photo</button>}</Modal>);
   }
   if(method==="url"){
-    return(<Modal title="Recette depuis une URL" onClose={onClose} wide>{backBtn}<Field label="URL de la recette"><div style={{display:"flex",gap:8}}><input style={{...inputStyle,flex:1}} value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://www.marmiton.org/..."/><button onClick={fetchFromUrl} disabled={!url||analyzing} style={{padding:"10px 16px",background:url&&!analyzing?"#10B981":"#E2E8F0",border:"none",borderRadius:8,color:url&&!analyzing?"#fff":"#475569",fontWeight:600,fontSize:13,cursor:url&&!analyzing?"pointer":"default",whiteSpace:"nowrap"}}>{analyzing?<span style={{animation:"spin 1s linear infinite",display:"inline-block"}}><Icon name="loader" size={14}/></span>:"Extraire"}</button></div></Field>{form.nom&&<RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing}/>}</Modal>);
+    return(<Modal title="Recette depuis une URL" onClose={onClose} wide>{backBtn}<Field label="URL de la recette"><div style={{display:"flex",gap:8}}><input style={{...inputStyle,flex:1}} value={url} onChange={e=>setUrl(e.target.value)} placeholder="https://www.marmiton.org/..."/><button onClick={fetchFromUrl} disabled={!url||analyzing} style={{padding:"10px 16px",background:url&&!analyzing?"#10B981":"#E2E8F0",border:"none",borderRadius:8,color:url&&!analyzing?"#fff":"#475569",fontWeight:600,fontSize:13,cursor:url&&!analyzing?"pointer":"default",whiteSpace:"nowrap"}}>{analyzing?<span style={{animation:"spin 1s linear infinite",display:"inline-block"}}><Icon name="loader" size={14}/></span>:"Extraire"}</button></div></Field>{form.nom&&<RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing} duplicateWarning={duplicateNom&&duplicateNom===form.nom}/>}</Modal>);
   }
   if(method==="ai"||method==="ingredients"){
     const color=method==="ai"?"#EC4899":"#14B8A6";
-    return(<Modal title={method==="ai"?"Générer avec l'IA":"Recherche par ingrédients"} onClose={onClose} wide>{backBtn}<Field label={method==="ai"?"Décris la recette":"Quels ingrédients as-tu ?"}><div style={{display:"flex",flexDirection:"column",gap:8}}><textarea style={{...inputStyle,minHeight:80,resize:"vertical"}} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder={method==="ai"?"Ex: pasta crémeuse au saumon fumé...":"Ex: j'ai des courgettes, du parmesan..."}/><button onClick={generateFromPrompt} disabled={!prompt||analyzing} style={{padding:"11px 16px",background:prompt&&!analyzing?color:"#E2E8F0",border:"none",borderRadius:8,color:prompt&&!analyzing?"#fff":"#475569",fontWeight:600,fontSize:13,cursor:prompt&&!analyzing?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>{analyzing?<><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}><Icon name="loader" size={14}/></span>Génération...</>:<><Icon name="sparkle" size={14}/>Générer</>}</button></div></Field>{form.nom&&<RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing}/>}</Modal>);
+    return(<Modal title={method==="ai"?"Générer avec l'IA":"Recherche par ingrédients"} onClose={onClose} wide>{backBtn}<Field label={method==="ai"?"Décris la recette":"Quels ingrédients as-tu ?"}><div style={{display:"flex",flexDirection:"column",gap:8}}><textarea style={{...inputStyle,minHeight:80,resize:"vertical"}} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder={method==="ai"?"Ex: pasta crémeuse au saumon fumé...":"Ex: j'ai des courgettes, du parmesan..."}/><button onClick={generateFromPrompt} disabled={!prompt||analyzing} style={{padding:"11px 16px",background:prompt&&!analyzing?color:"#E2E8F0",border:"none",borderRadius:8,color:prompt&&!analyzing?"#fff":"#475569",fontWeight:600,fontSize:13,cursor:prompt&&!analyzing?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>{analyzing?<><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}><Icon name="loader" size={14}/></span>Génération...</>:<><Icon name="sparkle" size={14}/>Générer</>}</button></div></Field>{form.nom&&<RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={analyzing} duplicateWarning={duplicateNom&&duplicateNom===form.nom}/>}</Modal>);
   }
   return(<Modal title="Saisie manuelle" onClose={onClose} wide>{backBtn}<RecipeForm form={form} setForm={setForm} saving={saving} onSave={save} analyzing={false}/></Modal>);
 }
