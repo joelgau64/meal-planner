@@ -243,10 +243,10 @@ async function claudeJSON(system,user,withSearch=false){
     return null;
   }
 }
-// model="claude-haiku-4-5-20251001" par défaut (moins cher). extractOneFile
-// escalade automatiquement vers Sonnet si Haiku ne renvoie pas de résultat exploitable
-// (photo difficile : écriture manuscrite, mauvais cadrage, etc.)
-async function claudeVision(prompt,base64,mediaType,model="claude-haiku-4-5-20251001"){
+// Vision : reste sur Sonnet par défaut. Testé avec Haiku 4.5 → hallucinations
+// sur l'OCR de photos (mots inventés, texte incohérent). Le gain de coût ne
+// vaut pas la perte de fiabilité sur cette tâche précise.
+async function claudeVision(prompt,base64,mediaType,model="claude-sonnet-4-5"){
   const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,max_tokens:1500,system:"Tu es un chef cuisinier expert. Retourne UNIQUEMENT un JSON valide, sans backticks.",messages:[{role:"user",content:[{type:"image",source:{type:"base64",media_type:mediaType,data:base64}},{type:"text",text:prompt}]}]})});
   const data=await res.json();
   return parseJSON((data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join(""));
@@ -1087,11 +1087,7 @@ function AddRecipeModal({onClose,onSaved}){
     const reader=new FileReader();
     reader.onload=async(e)=>{
       const base64=e.target.result.split(",")[1];
-      let result=await claudeVision(RECIPE_JSON_PROMPT,base64,file.type);
-      if(!result?.nom){
-        // Haiku n'a pas réussi à extraire un nom exploitable (photo difficile) → on retente avec Sonnet
-        result=await claudeVision(RECIPE_JSON_PROMPT,base64,file.type,"claude-sonnet-4-5");
-      }
+      const result=await claudeVision(RECIPE_JSON_PROMPT,base64,file.type);
       if(result){
         setForm(f=>({...f,...result,tags:Array.isArray(result.tags)?result.tags:f.tags,photoUrl:f.photoUrl}));
         await checkDuplicate(result.nom);
@@ -3042,11 +3038,7 @@ function FrigoTab({toast,onCookWith}){
     const reader=new FileReader();
     reader.onload=async(e)=>{
       const base64=e.target.result.split(",")[1];
-      let r=await claudeVision(FRIGO_JSON_PROMPT,base64,file.type);
-      if(!r?.article){
-        // Lecture de date de péremption ratée par Haiku → on retente avec Sonnet avant d'abandonner
-        r=await claudeVision(FRIGO_JSON_PROMPT,base64,file.type,"claude-sonnet-4-5");
-      }
+      const r=await claudeVision(FRIGO_JSON_PROMPT,base64,file.type);
       if(r?.article){
         setDraft({
           article:r.article||"",
