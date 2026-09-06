@@ -129,7 +129,7 @@ function canonUnit(u){
   if(!u)return"";
   const x=u.toLowerCase().replace(/\./g,"").replace(/\s/g,"");
   const map={g:"g",kg:"kg",mg:"mg",ml:"ml",cl:"cl",dl:"dl",l:"l",
-    cas:"càs","càs":"càs",cac:"càc","càc":"càc",
+    cas:"càs","càs":"càs",cac:"càc","càc":"càc","càsoupe":"càs","càcafé":"càc",
     cuillere:"càs",cuilleres:"càs","cuillère":"càs","cuillères":"càs",
     tbsp:"càs",tsp:"càc",cup:"tasse",tasse:"tasse",
     cm:"cm",mm:"mm",oz:"oz",lb:"lb",pincee:"pincée","pincée":"pincée",pincees:"pincée","pincées":"pincée",pieces:"pièces","pièces":"pièces","pièce":"pièces"};
@@ -143,14 +143,28 @@ function unitFamily(canon){
 }
 
 // Parser canonique unique. Retourne {original, qty(number|null), unit(canon), name, scalable}.
+// Gère deux ordres : "200g de quinoa" (quantité d'abord, cas standard) ET
+// "quinoa 100 g" / "aubergine 1 (grosse)" (nom d'abord, cas produit par certaines
+// extractions IA) — sinon ces lignes ne scalent jamais quand on change les portions.
 function parseOneIngredient(line){
   const trimmed=(line||"").replace(/^[-•*]+\s*/,"").trim();
   if(!trimmed)return{original:line,qty:null,unit:"",name:trimmed,scalable:false};
-  const m=trimmed.match(/^([\d.,/]+)\s*(kg|mg|ml|cl|dl|l|cm|mm|c\.?à\.?s\.?|c\.?à\.?c\.?|càs|càc|tasse|cuillères?|tbsp|tsp|cup|oz|lb|pincées?|pièces?|g)?(?=[\s,]|$)\s*(?:de |d'|du |des )?(.+)/i);
+  const UNIT_ALT="kg|mg|ml|cl|dl|l|cm|mm|c\\.?\\s*à\\.?\\s*s\\.?|c\\.?\\s*à\\.?\\s*c\\.?|c\\.?\\s*à\\.?\\s*(?:soupe|café)|càs|càc|tasse|cuillères?|tbsp|tsp|cup|oz|lb|pincées?|pièces?|feuilles?|gousses?|tranches?|g";
+  // Cas 1 : quantité au début de la ligne.
+  const m=trimmed.match(new RegExp(`^([\\d.,/]+)\\s*(${UNIT_ALT})?(?=[\\s,]|$)\\s*(?:de |d'|du |des )?(.+)`,"i"));
   if(m){
     const qty=parseFloat(m[1].replace(",","."));
     const name=(m[3]||trimmed).trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
     return{original:trimmed,qty:isNaN(qty)?null:qty,unit:canonUnit(m[2]||""),name,scalable:!isNaN(qty)};
+  }
+  // Cas 2 : quantité à la fin de la ligne, ex. "quinoa 100 g", "aubergine 1 (grosse)".
+  const m2=trimmed.match(new RegExp(`^(.+?)\\s+([\\d.,/]+)\\s*(${UNIT_ALT})?\\s*(\\([^)]*\\))?$`,"i"));
+  if(m2){
+    const qty=parseFloat(m2[2].replace(",","."));
+    if(!isNaN(qty)){
+      const name=(m2[1].trim()+(m2[4]?" "+m2[4]:"")).trim();
+      return{original:trimmed,qty,unit:canonUnit(m2[3]||""),name,scalable:true};
+    }
   }
   return{original:trimmed,qty:null,unit:"",name:trimmed,scalable:false};
 }
