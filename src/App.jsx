@@ -1237,12 +1237,12 @@ function RecettesTab({toast}){
   const [voting,setVoting]=useState(null);
   const [searchQuery,setSearchQuery]=useState("");
 
-  const load=useCallback(async(force=false)=>{
+  const load=useCallback(async(force=false,silent=false)=>{
     const cached=getCached("recettes");
     if(cached&&!force){setRecettes(cached);setLoading(false);return;}
-    setLoading(true);
+    if(!silent)setLoading(true);
     try{const data=await notionQuery(DB_RECETTES);const parsed=(data.results||[]).map(parseRecette);setRecettes(parsed);setCache("recettes",parsed);}catch(e){console.error(e);}
-    setLoading(false);
+    if(!silent)setLoading(false);
   },[]);
 
   useEffect(()=>{load();},[load]);
@@ -1321,7 +1321,7 @@ function RecettesTab({toast}){
         </div>
       )}
 
-      {showAdd&&<AddRecipeModal onClose={()=>setShowAdd(false)} onSaved={(msg)=>{toast(msg);load(true);}}/>}
+      {showAdd&&<AddRecipeModal onClose={()=>setShowAdd(false)} onSaved={(msg)=>{toast(msg);load(true,true);}}/>}
 
       {selected&&!planningTarget&&(
         <RecipeDetailModal
@@ -1804,19 +1804,19 @@ function PlanningTab({toast}){
   };
   const weekDates=getWeekDates(weekOffset);
 
-  const load=useCallback(async(force=false)=>{
+  const load=useCallback(async(force=false,silent=false)=>{
     const cachedP=getCached("planning");
     const cachedR=getCached("recettes");
     if(cachedP&&!force)setPlanning(cachedP);
     else{
-      setLoading(true);
+      if(!silent)setLoading(true);
       try{const data=await notionQuery(DB_PLANNING);const parsed=(data.results||[]).map(parsePlanning);setPlanning(parsed);setCache("planning",parsed);}catch(e){console.error(e);}
     }
     if(cachedR&&!force)setRecettes(cachedR);
     else{
       try{const data=await notionQuery(DB_RECETTES);const parsed=(data.results||[]).map(parseRecette);setRecettes(parsed);setCache("recettes",parsed);}catch(e){console.error(e);}
     }
-    setLoading(false);
+    if(!silent)setLoading(false);
   },[weekOffset]);
 
   useEffect(()=>{load();},[load]);
@@ -1916,7 +1916,7 @@ function PlanningTab({toast}){
     });
     toast("Repas ajouté ✓");setSaving(false);setShowForm(false);
     setForm({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
-    setCache("planning",null);load(true);
+    setCache("planning",null);load(true,true);
   };
 
   const confirmCuisine=async(meal)=>{
@@ -2228,7 +2228,7 @@ function PlanningTab({toast}){
           planning={planning}
           toast={toast}
           onClose={()=>setShowWeekWizard(false)}
-          onConfirm={()=>{setShowWeekWizard(false);setCache("planning",null);load(true);}}
+          onConfirm={()=>{setShowWeekWizard(false);setCache("planning",null);load(true,true);}}
         />
       )}
 
@@ -2293,7 +2293,7 @@ function PlanningTab({toast}){
           onAddToCourses={()=>{}}
           onAddToPlanning={(r,p,mode)=>{setPlanningTargetFromDetail({recette:r,portions:p,mode});}}
           onUpdate={(updated)=>setSelectedMealRecette(updated)}
-          onCookComplete={()=>{toast&&toast("Repas validé ✓");setCache("planning",null);load(true);}}
+          onCookComplete={()=>{toast&&toast("Repas validé ✓");setCache("planning",null);load(true,true);}}
           planningEntry={selectedMealPlanning}
           onCancelPlanning={cancelPlanningEntry}
           onRequeuePlanning={requeuePlanningEntry}
@@ -2392,12 +2392,12 @@ function CoursesTab({toast}){
     setSuggestions(articleHistory.filter(h=>norm(h.article).includes(q)).slice(0,6));
   };
 
-  const load=useCallback(async(force=false)=>{
+  const load=useCallback(async(force=false,silent=false)=>{
     const cached=getCached("courses");
     if(cached&&!force){setCourses(cached);setLoading(false);return;}
-    setLoading(true);
+    if(!silent)setLoading(true);
     try{const data=await notionQuery(DB_COURSES);const parsed=(data.results||[]).map(parseCourse);setCourses(parsed);setCache("courses",parsed);}catch(e){console.error(e);}
-    setLoading(false);
+    if(!silent)setLoading(false);
   },[]);
 
   useEffect(()=>{load();},[load]);
@@ -2442,7 +2442,7 @@ function CoursesTab({toast}){
     toast("Article ajouté ✓");setSaving(false);setShowForm(false);
     setForm({article:"",categorie:"Épicerie",quantite:"",semaine:"",recette:""});
     setCategorieTouched(false);
-    setCache("courses",null);load(true);
+    setCache("courses",null);load(true,true);
   };
 
   // Group and merge quantities
