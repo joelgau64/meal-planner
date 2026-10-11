@@ -60,7 +60,7 @@ export function AddToPlanningModal({recette,portions,mode,onClose,toast}){
           {MOMENTS.map(m=><option key={m}>{m}</option>)}
         </select>
       </Field>
-      <button onClick={save} disabled={saving} style={btnPrimary}>{saving?"Enregistrement...":mode==="queue"?"Ajouter à la file":"Planifier"}</button>
+      <button onClick={save} disabled={saving} style={btnPrimary}>{saving?"Enregistrement…":mode==="queue"?"Ajouter à la file":"Planifier"}</button>
     </Modal>
   );
 }

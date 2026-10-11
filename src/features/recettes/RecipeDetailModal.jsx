@@ -220,7 +220,7 @@ export function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToP
             </button>
           );
         })}
-        <span style={{fontSize:11,color:"var(--subtle)",marginLeft:4}}>{savingNote?"...":(currentNote||"").length+"/5"}</span>
+        <span style={{fontSize:11,color:"var(--subtle)",marginLeft:4}}>{savingNote?"…":(currentNote||"").length+"/5"}</span>
       </div>
 
       {/* Portions adjuster */}
@@ -332,7 +332,7 @@ export function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToP
                 }catch(e){logError("deleteRecette",e,{id:recette.id});toast("Erreur suppression");}
                 setDeleting(false);
               }} style={{padding:"8px 14px",background:"#DC2626",border:"none",borderRadius:10,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",opacity:deleting?0.5:1}}>
-                {deleting?"...":"Supprimer"}
+                {deleting?"…":"Supprimer"}
               </button>
             </div>
           )}

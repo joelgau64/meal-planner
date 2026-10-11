@@ -2,8 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icon";
 
 // ── UI Primitives ─────────────────────────────────────────────────────────────
-export function Spinner({label="Chargement..."}){
-  return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:40,color:"var(--muted)"}}><div style={{animation:"spin 1s linear infinite"}}><Icon name="loader" size={28}/></div><span style={{fontSize:13}}>{label}</span></div>);
+// Indicateur de chargement unique de l'app : anneau fin, segment terracotta.
+// <Spinner/> = bloc centré (chargement d'un écran) ; <InlineSpinner/> = dans un bouton,
+// prend la couleur du texte du bouton.
+export function Spinner({label="Chargement…"}){
+  return(<div role="status" aria-live="polite" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:14,padding:"56px 20px",color:"var(--muted)"}}><span className="spinner" style={{width:28,height:28}}/>{label&&<span style={{fontSize:14}}>{label}</span>}</div>);
+}
+export function InlineSpinner({size=14}){
+  return <span className="spinner inline" aria-hidden="true" style={{width:size,height:size,borderWidth:2}}/>;
 }
 // Un message commençant par ❌, ⚠️ ou "Erreur" s'affiche en rouge, sans coche verte, et reste plus longtemps.
 export function Toast({message,onClose}){

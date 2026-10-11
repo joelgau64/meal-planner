@@ -174,7 +174,7 @@ export function CoursesTab({toast}){
         )}
       </div>
 
-      {loading?<Spinner label="Chargement des courses..."/>:(
+      {loading?<Spinner label="Chargement des courses…"/>:(
         <div style={{display:"flex",flexDirection:"column",gap:18}}>
           {total===0&&<div style={{textAlign:"center",padding:"48px 16px",color:"var(--muted)"}}><div style={{width:56,height:56,borderRadius:999,background:"var(--surface-2)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",color:"var(--subtle)"}}><Icon name="cart" size={24}/></div><div style={{fontSize:15,fontWeight:600,color:"var(--text)"}}>Liste vide</div><div style={{fontSize:13,marginTop:4}}>Ajoute un article ci-dessus, ou génère la liste depuis le Planning.</div></div>}
           {total>0&&toBuy.length===0&&<div style={{textAlign:"center",padding:"24px 16px",color:"var(--success)",fontWeight:600,fontSize:15}}>Tout est dans le caddie ✓</div>}
@@ -232,7 +232,7 @@ export function CoursesTab({toast}){
             <Field label="Quantité"><input style={inputStyle} value={form.quantite} onChange={e=>setForm(f=>({...f,quantite:e.target.value}))} placeholder="500g..."/></Field>
           </div>
           <Field label="Recette (optionnel)"><input style={inputStyle} value={form.recette} onChange={e=>setForm(f=>({...f,recette:e.target.value}))} placeholder="Ex: Poulet rôti"/></Field>
-          <button onClick={addItem} disabled={saving||!form.article} style={form.article?btnPrimary:btnDisabled}>{saving?"Ajout...":"Ajouter"}</button>
+          <button onClick={addItem} disabled={saving||!form.article} style={form.article?btnPrimary:btnDisabled}>{saving?"Ajout…":"Ajouter"}</button>
         </Modal>
       )}
 

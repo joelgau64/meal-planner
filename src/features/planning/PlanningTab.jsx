@@ -368,7 +368,7 @@ export function PlanningTab({toast}){
         </div>
       </div>
 
-      {loading?<Spinner label="Chargement..."/>:(
+      {loading?<Spinner label="Chargement du planning…"/>:(
         <div>
           {/* Semaine */}
           <div className="planning-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:8,marginBottom:20}}>
@@ -428,7 +428,7 @@ export function PlanningTab({toast}){
               {confirmClearQueue&&(
                 <span style={{display:"flex",gap:6,alignItems:"center"}}>
                   <button onClick={()=>setConfirmClearQueue(false)} style={{fontSize:11,color:"var(--muted)",background:"var(--surface-2)",border:"none",borderRadius:10,padding:"3px 10px",cursor:"pointer",fontWeight:600,fontFamily:"inherit"}}>Annuler</button>
-                  <button disabled={clearingQueue} onClick={clearQueue} style={{fontSize:11,color:"#fff",background:"#DC2626",border:"none",borderRadius:10,padding:"3px 10px",cursor:"pointer",fontWeight:700,fontFamily:"inherit",opacity:clearingQueue?0.5:1}}>{clearingQueue?"...":"Tout retirer"}</button>
+                  <button disabled={clearingQueue} onClick={clearQueue} style={{fontSize:11,color:"#fff",background:"#DC2626",border:"none",borderRadius:10,padding:"3px 10px",cursor:"pointer",fontWeight:700,fontFamily:"inherit",opacity:clearingQueue?0.5:1}}>{clearingQueue?"…":"Tout retirer"}</button>
                 </span>
               )}
             </div>
@@ -578,7 +578,7 @@ export function PlanningTab({toast}){
         <Modal title="Ajouter au planning" onClose={()=>setShowForm(false)}>
           <Field label="Recette">
             <div style={{position:"relative"}}>
-              <input style={inputStyle} value={form.recetteQuery} onChange={e=>setForm(f=>({...f,recetteQuery:e.target.value,recetteId:""}))} placeholder="Rechercher une recette..."/>
+              <input style={inputStyle} value={form.recetteQuery} onChange={e=>setForm(f=>({...f,recetteQuery:e.target.value,recetteId:""}))} placeholder="Rechercher une recette…"/>
               {suggestions.length>0&&(
                 <div style={{position:"absolute",top:"100%",left:0,right:0,background:"var(--surface-2)",border:"1px solid #44403C",borderRadius:10,zIndex:100,marginTop:4,overflow:"hidden"}}>
                   {suggestions.map((r,i)=>(
@@ -605,7 +605,7 @@ export function PlanningTab({toast}){
             <Field label="Moment"><select style={inputStyle} value={form.moment} onChange={e=>setForm(f=>({...f,moment:e.target.value}))}>{MOMENTS.map(m=><option key={m}>{m}</option>)}</select></Field>
             <Field label="Portions"><input style={inputStyle} type="number" value={form.portions} onChange={e=>setForm(f=>({...f,portions:e.target.value}))}/></Field>
           </div>
-          <button onClick={save} disabled={saving||!form.recetteQuery||((!form.queue&&!form.date))} style={form.recetteQuery&&(form.queue||form.date)?btnPrimary:btnDisabled}>{saving?"Enregistrement...":"Ajouter"}</button>
+          <button onClick={save} disabled={saving||!form.recetteQuery||((!form.queue&&!form.date))} style={form.recetteQuery&&(form.queue||form.date)?btnPrimary:btnDisabled}>{saving?"Enregistrement…":"Ajouter"}</button>
         </Modal>
       )}
     </div>

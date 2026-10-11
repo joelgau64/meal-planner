@@ -18,6 +18,8 @@
 *{box-sizing:border-box;}
 html,body,#root{overflow-x:hidden;max-width:100vw;}
 @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.spinner{display:inline-block;flex-shrink:0;box-sizing:border-box;border-radius:999px;border:2.5px solid var(--border);border-top-color:var(--accent);animation:spin .75s linear infinite;}
+.spinner.inline{border-color:color-mix(in srgb,currentColor 25%,transparent);border-top-color:currentColor;vertical-align:-2px;}
 @keyframes slideUp{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
 ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--surface-2);}::-webkit-scrollbar-thumb{background:#D6D3D1;border-radius:4px;}
 select option{background:var(--surface);}
@@ -50,7 +52,7 @@ button,a,[role=button]{touch-action:manipulation;-webkit-tap-highlight-color:tra
 button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 input:focus,textarea:focus,select:focus{border-color:var(--accent)!important;box-shadow:0 0 0 3px rgba(194,98,45,0.15);background:var(--surface)!important;}
 button:disabled{cursor:not-allowed;}
-@media (prefers-reduced-motion: reduce){*{animation-duration:0.01ms!important;transition-duration:0.01ms!important;}}
+@media (prefers-reduced-motion: reduce){*{animation-duration:0.01ms!important;transition-duration:0.01ms!important;} .spinner{animation-duration:1.6s!important;}}
 @media(max-width:480px){
   .btn-label{display:none;}
 }

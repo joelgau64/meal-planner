@@ -121,7 +121,7 @@ export default function App(){
 
       {/* ── Contenu ── */}
       <div className="app-content tab-content" key={tab} style={{maxWidth:980,margin:"0 auto",padding:"20px 20px",paddingBottom:"calc(20px + env(safe-area-inset-bottom))"}}>
-        <Suspense fallback={<Spinner/>}>
+        <Suspense fallback={<Spinner label={null}/>}>
         {tab==="recettes"  &&<RecettesTab  toast={toast}/>}
         {tab==="planning"  &&<PlanningTab  toast={toast}/>}
         {tab==="courses"   &&<CoursesTab   toast={toast}/>}

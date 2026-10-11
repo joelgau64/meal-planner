@@ -191,7 +191,7 @@ export function CoursesModal({onClose,coursesSelection,setCoursesSelection,recet
 
       <button disabled={generatingCourses||totalSel===0} onClick={doImport}
         style={totalSel>0&&!generatingCourses?{...btnPrimary,marginTop:8,width:"100%"}:{...btnDisabled,marginTop:8,width:"100%"}}>
-        {generatingCourses?"Ajout en cours...":"Ajouter "+totalSel+" article"+(totalSel>1?"s":"")+" à la liste de courses"}
+        {generatingCourses?"Ajout en cours…":"Ajouter "+totalSel+" article"+(totalSel>1?"s":"")+" à la liste de courses"}
       </button>
     </Modal>
   );

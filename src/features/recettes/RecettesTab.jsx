@@ -57,7 +57,7 @@ export function RecettesTab({toast}){
         <div style={{position:"relative"}}>
           <input
             value={searchQuery} onChange={e=>setSearchQuery(e.target.value)}
-            placeholder="Rechercher une recette ou un ingrédient..."
+            placeholder="Rechercher une recette ou un ingrédient…"
             style={{width:"100%",padding:"10px 14px 10px 36px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:10,fontSize:13,color:"var(--text)",outline:"none",fontFamily:"inherit"}}
           />
           <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",color:"var(--subtle)",display:"flex"}}><Icon name="search" size={16}/></span>
@@ -72,12 +72,12 @@ export function RecettesTab({toast}){
         <div style={{display:"flex",gap:8}}>
           <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{...inputStyle,width:"auto",fontSize:12,padding:"6px 10px"}}><option value="score">Score</option><option value="cuisinee">Plus cuisinée</option><option value="recent">À refaire</option></select>
           <button onClick={()=>load(true)} style={{padding:"8px 10px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:10,color:"var(--muted)",cursor:"pointer"}}><Icon name="refresh" size={14}/></button>
-          <button onClick={async()=>{toast("Récupération des photos...");const res=await fetch('/api/sync-photos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});const data=await res.json();toast(`Photos: ${data.updated} mises à jour ✓`);load(true);}} title="Récupérer les photos" style={{padding:"8px 10px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:10,color:"var(--muted)",cursor:"pointer",display:"flex"}}><Icon name="image" size={14}/></button>
+          <button onClick={async()=>{toast("Récupération des photos…");const res=await fetch('/api/sync-photos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});const data=await res.json();toast(`Photos: ${data.updated} mises à jour ✓`);load(true);}} title="Récupérer les photos" style={{padding:"8px 10px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:10,color:"var(--muted)",cursor:"pointer",display:"flex"}}><Icon name="image" size={14}/></button>
           <button onClick={()=>setShowAdd(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"var(--accent)",border:"none",borderRadius:10,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/>Nouvelle</button>
         </div>
       </div>
 
-      {loading?<Spinner label="Chargement des recettes..."/>:(
+      {loading?<Spinner label="Chargement des recettes…"/>:(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(min(100%,160px), 1fr))",gap:12}}>
           {sorted.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:48,color:"var(--muted)"}}><div style={{fontSize:40,marginBottom:12}}>📖</div><div style={{fontSize:14}}>Aucune recette.</div></div>}
           {sorted.map((r,i)=>(
