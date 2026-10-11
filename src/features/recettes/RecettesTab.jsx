@@ -1,17 +1,17 @@
+import { loadWithCache } from "../../lib/data";
 import { useCallback, useEffect, useState } from "react";
 import { AddToPlanningModal } from "../planning/AddToPlanningModal";
 import { AddRecipeModal } from "./AddRecipeModal";
 import { RecipeDetailModal } from "./RecipeDetailModal";
-import { getCached, setCache } from "../../lib/cache";
-import { DB_RECETTES } from "../../lib/constants";
-import { nNum, notionQuery, notionUpdate, parseRecette } from "../../lib/notion";
+import { peekCached, setCache } from "../../lib/cache";
+import { nNum, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { RecipeThumb, ScoreBadge, Spinner, inputStyle } from "../../ui/primitives";
 
 // ── Recettes Tab ──────────────────────────────────────────────────────────────
 export function RecettesTab({toast}){
-  const [recettes,setRecettes]=useState([]);
-  const [loading,setLoading]=useState(true);
+  const [recettes,setRecettes]=useState(()=>peekCached("recettes")||[]);
+  const [loading,setLoading]=useState(()=>!peekCached("recettes"));
   const [showAdd,setShowAdd]=useState(false);
   const [selected,setSelected]=useState(null);
   const [planningTarget,setPlanningTarget]=useState(null); // {recette, portions, mode}
@@ -21,12 +21,11 @@ export function RecettesTab({toast}){
   const [searchQuery,setSearchQuery]=useState("");
 
   const load=useCallback(async(force=false,silent=false)=>{
-    const cached=getCached("recettes");
-    if(cached&&!force){setRecettes(cached);setLoading(false);return;}
-    if(!silent)setLoading(true);
-    try{const data=await notionQuery(DB_RECETTES);const parsed=(data.results||[]).map(parseRecette);setRecettes(parsed);setCache("recettes",parsed);}catch(e){console.error(e);}
-    if(!silent)setLoading(false);
-  },[]);
+    const {needSpinner,promise}=loadWithCache("recettes",{force,onCached:setRecettes,onFresh:setRecettes,onError:e=>toast("❌ Recettes non chargées : "+e.message)});
+    if(needSpinner&&!silent)setLoading(true);else setLoading(false);
+    await promise;
+    setLoading(false);
+  },[toast]);
 
   useEffect(()=>{load();},[load]);
 

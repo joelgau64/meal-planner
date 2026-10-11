@@ -1,42 +1,20 @@
+import { loadWithCache } from "../../lib/data";
+import { joursAvant } from "../../lib/frigo";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getCached, setCache } from "../../lib/cache";
+import { peekCached, setCache } from "../../lib/cache";
 import { FRIGO_JSON_PROMPT, claudeVision } from "../../lib/claude";
 import { DB_FRIGO } from "../../lib/constants";
 import { localISO } from "../../lib/dates";
 import { logError } from "../../lib/errors";
-import { nCheck, nDate, nSel, nText, nTitle, notionCreate, notionQuery, notionUpdate } from "../../lib/notion";
+import { nCheck, nDate, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { inputStyle } from "../../ui/primitives";
 
 // ── App ───────────────────────────────────────────────────────────────────────
-export function parseFrigo(page){
-  const p=page.properties||{};
-  const getT=x=>x?.title?.[0]?.plain_text||"";
-  const getS=x=>x?.select?.name||"";
-  const getD=x=>x?.date?.start||null;
-  const getR=x=>x?.rich_text?.[0]?.plain_text||"";
-  const getC=x=>!!x?.checkbox;
-  return{
-    id:page.id,
-    article:getT(p["Article"]),
-    proteine:getS(p["Protéine"]),
-    forme:getS(p["Forme"]),
-    peremption:getD(p["Date de péremption"]),
-    quantite:getR(p["Quantité"]),
-    ajoute:getD(p["Ajouté le"]),
-    consomme:getC(p["Consommé"]),
-  };
-}
 
-export function joursAvant(dateStr){
-  if(!dateStr)return null;
-  const d=new Date(dateStr+"T00:00");
-  const now=new Date();now.setHours(0,0,0,0);
-  return Math.round((d-now)/(1000*3600*24));
-}
 
 export function FrigoTab({toast,onCookWith}){
-  const [items,setItems]=useState(()=>getCached("frigo")||[]);
+  const [items,setItems]=useState(()=>peekCached("frigo")||[]);
   const [loading,setLoading]=useState(false);
   const [showCapture,setShowCapture]=useState(false);
   const [analyzing,setAnalyzing]=useState(false);
@@ -47,18 +25,11 @@ export function FrigoTab({toast,onCookWith}){
   const camRef=useRef(null);
   const fileRef=useRef(null);
 
+  // Dernière version connue tout de suite, rafraîchie en arrière-plan si besoin.
   const load=useCallback(async(force)=>{
-    if(!force){const c=getCached("frigo");if(c){setItems(c);return;}}
-    setLoading(true);
-    try{
-      const data=await notionQuery(DB_FRIGO);
-      const parsed=(data.results||[]).map(parseFrigo).filter(x=>!x.consomme);
-      parsed.sort((a,b)=>{
-        const ja=joursAvant(a.peremption),jb=joursAvant(b.peremption);
-        if(ja==null)return 1;if(jb==null)return -1;return ja-jb;
-      });
-      setItems(parsed);setCache("frigo",parsed);
-    }catch(e){logError("frigoLoad",e);}
+    const {needSpinner,promise}=loadWithCache("frigo",{force,onCached:setItems,onFresh:setItems,onError:e=>logError("frigoLoad",e)});
+    if(needSpinner)setLoading(true);
+    await promise;
     setLoading(false);
   },[]);
   useEffect(()=>{load();},[load]);

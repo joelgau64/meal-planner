@@ -1,16 +1,17 @@
+import { loadWithCache } from "../../lib/data";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getCached, setCache } from "../../lib/cache";
+import { peekCached, setCache } from "../../lib/cache";
 import { CAT_COLORS, DB_COURSES } from "../../lib/constants";
 import { logError } from "../../lib/errors";
 import { guessCategory } from "../../lib/ingredients";
-import { nCheck, nSel, nText, nTitle, notionCreate, notionQuery, notionUpdate, parseCourse } from "../../lib/notion";
+import { nCheck, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { Field, Modal, Spinner, btnDisabled, btnPrimary, inputStyle } from "../../ui/primitives";
 
 // ── Courses Tab ───────────────────────────────────────────────────────────────
 export function CoursesTab({toast}){
-  const [courses,setCourses]=useState([]);
-  const [loading,setLoading]=useState(true);
+  const [courses,setCourses]=useState(()=>peekCached("courses")||[]);
+  const [loading,setLoading]=useState(()=>!peekCached("courses"));
   const [showForm,setShowForm]=useState(false);
   const [sortBy,setSortBy]=useState("categorie"); // "categorie" | "recette"
   const [form,setForm]=useState({article:"",categorie:"Épicerie",quantite:"",semaine:"",recette:""});
@@ -43,12 +44,11 @@ export function CoursesTab({toast}){
   };
 
   const load=useCallback(async(force=false,silent=false)=>{
-    const cached=getCached("courses");
-    if(cached&&!force){setCourses(cached);setLoading(false);return;}
-    if(!silent)setLoading(true);
-    try{const data=await notionQuery(DB_COURSES);const parsed=(data.results||[]).map(parseCourse);setCourses(parsed);setCache("courses",parsed);}catch(e){console.error(e);}
-    if(!silent)setLoading(false);
-  },[]);
+    const {needSpinner,promise}=loadWithCache("courses",{force,onCached:setCourses,onFresh:setCourses,onError:e=>toast("❌ Courses non chargées : "+e.message)});
+    if(needSpinner&&!silent)setLoading(true);else setLoading(false);
+    await promise;
+    setLoading(false);
+  },[toast]);
 
   useEffect(()=>{load();},[load]);
 

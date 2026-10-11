@@ -1,31 +1,19 @@
+import { loadWithCache } from "../../lib/data";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CoursesModal } from "../courses/CoursesModal";
 import { AddToPlanningModal } from "./AddToPlanningModal";
 import { WeekPlannerWizard } from "./WeekPlannerWizard";
 import { RecipeDetailModal } from "../recettes/RecipeDetailModal";
-import { getCached, setCache } from "../../lib/cache";
-import { DAYS, DB_PLANNING, DB_RECETTES, DEFAULT_PORTIONS, MOMENTS, MOMENT_COLORS } from "../../lib/constants";
+import { peekCached, setCache } from "../../lib/cache";
+import { DAYS, DB_PLANNING, DEFAULT_PORTIONS, MOMENTS, MOMENT_COLORS } from "../../lib/constants";
 import { localISO } from "../../lib/dates";
 import { logError } from "../../lib/errors";
-import { nCheck, nDate, nNum, nSel, nText, nTitle, notionCreate, notionQuery, notionUpdate, parsePlanning, parseRecette } from "../../lib/notion";
+import { nCheck, nDate, nNum, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { Field, Modal, RecipeThumb, Spinner, btnDisabled, btnPrimary, inputStyle } from "../../ui/primitives";
 
 // Date par défaut pour la planification : aujourd'hui, ou demain s'il est 18:00 passé.
 // (Le soir, on planifie généralement pour le lendemain.)
-// Fenêtre de chargement du planning : 8 dernières semaines + futur + file d'attente + repas sans date.
-// Avant : TOUTE la base Planning à chaque chargement → coût qui grossit chaque semaine (~1 requête Notion
-// séquentielle de plus par tranche de 100 repas). Conséquence assumée : naviguer à plus de 8 semaines
-// dans le passé affiche une grille vide.
-export const PLANNING_HISTORY_DAYS=56;
-export function planningWindowFilter(){
-  const since=localISO(new Date(Date.now()-PLANNING_HISTORY_DAYS*864e5));
-  return {or:[
-    {property:"Date",date:{on_or_after:since}},
-    {property:"Date",date:{is_empty:true}},
-    {property:"File d'attente",checkbox:{equals:true}},
-  ]};
-}
 export function defaultPlanningDate(){
   const now=new Date();
   const d=new Date(now);
@@ -115,9 +103,9 @@ export function MealChip({meal,recette,ctx}){
 }
 
 export function PlanningTab({toast}){
-  const [planning,setPlanning]=useState([]);
-  const [recettes,setRecettes]=useState([]);
-  const [loading,setLoading]=useState(true);
+  const [planning,setPlanning]=useState(()=>peekCached("planning")||[]);
+  const [recettes,setRecettes]=useState(()=>peekCached("recettes")||[]);
+  const [loading,setLoading]=useState(()=>!peekCached("planning"));
   const [showForm,setShowForm]=useState(false);
   const [weekOffset,setWeekOffset]=useState(0);
   const [dragItem,setDragItem]=useState(null);
@@ -161,20 +149,12 @@ export function PlanningTab({toast}){
   const weekDates=getWeekDates(weekOffset);
 
   const load=useCallback(async(force=false,silent=false)=>{
-    const cachedP=getCached("planning");
-    const cachedR=getCached("recettes");
-    if(cachedP&&!force)setPlanning(cachedP);
-    if(cachedR&&!force)setRecettes(cachedR);
-    const needP=!cachedP||force, needR=!cachedR||force;
-    if(!needP&&!needR)return;
-    if(!silent&&needP)setLoading(true);
-    // Les deux requêtes partent en parallèle (avant : planning PUIS recettes, en série).
-    await Promise.all([
-      needP&&notionQuery(DB_PLANNING,planningWindowFilter()).then(data=>{const parsed=(data.results||[]).map(parsePlanning);setPlanning(parsed);setCache("planning",parsed);}).catch(e=>toast&&toast("❌ Planning non chargé : "+e.message)),
-      needR&&notionQuery(DB_RECETTES).then(data=>{const parsed=(data.results||[]).map(parseRecette);setRecettes(parsed);setCache("recettes",parsed);}).catch(e=>toast&&toast("❌ Recettes non chargées : "+e.message)),
-    ]);
-    if(!silent)setLoading(false);
-  },[weekOffset,toast]);
+    const P=loadWithCache("planning",{force,onCached:setPlanning,onFresh:setPlanning,onError:e=>toast&&toast("❌ Planning non chargé : "+e.message)});
+    const R=loadWithCache("recettes",{force,onCached:setRecettes,onFresh:setRecettes,onError:e=>toast&&toast("❌ Recettes non chargées : "+e.message)});
+    if(P.needSpinner&&!silent)setLoading(true);else setLoading(false);
+    await Promise.all([P.promise,R.promise]);
+    setLoading(false);
+  },[toast]);
 
   useEffect(()=>{load();},[load]);
 

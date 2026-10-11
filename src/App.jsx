@@ -6,6 +6,7 @@ const RecettesTab=lazy(()=>import("./features/recettes/RecettesTab").then(m=>({d
 const CoursesTab=lazy(()=>import("./features/courses/CoursesTab").then(m=>({default:m.CoursesTab})));
 const FrigoTab=lazy(()=>import("./features/frigo/FrigoTab").then(m=>({default:m.FrigoTab})));
 const DiscoveryTab=lazy(()=>import("./features/discovery/DiscoveryTab").then(m=>({default:m.DiscoveryTab})));
+import { prefetchStale } from "./lib/data";
 import { errorListeners } from "./lib/errors";
 import { ErrorPanel } from "./ui/ErrorPanel";
 import { Icon } from "./ui/Icon";
@@ -19,6 +20,22 @@ export default function App(){
   const [errorCount,setErrorCount]=useState(0);
   const closeToast=useCallback(()=>setToastMsg(null),[]);
   const toast=useCallback(msg=>setToastMsg(msg),[]); // référence stable → pas de re-render en cascade des onglets
+
+  // Préchargement : une fois le Planning affiché, on charge en tâche de fond les données
+  // périmées des autres onglets et le code des onglets, pour que chaque onglet s'ouvre
+  // instantanément. On recommence quand l'app revient au premier plan.
+  useEffect(()=>{
+    const idle=window.requestIdleCallback||(cb=>setTimeout(cb,1200));
+    const warm=()=>{
+      prefetchStale();
+      import("./features/recettes/RecettesTab");import("./features/courses/CoursesTab");
+      import("./features/frigo/FrigoTab");import("./features/discovery/DiscoveryTab");
+    };
+    const h=idle(warm,{timeout:3000});
+    const onVis=()=>{if(document.visibilityState==="visible")prefetchStale();};
+    document.addEventListener("visibilitychange",onVis);
+    return()=>{(window.cancelIdleCallback||clearTimeout)(h);document.removeEventListener("visibilitychange",onVis);};
+  },[]);
 
   // Garder l'écran allumé dans toute l'app (Wake Lock API)
   useEffect(()=>{
