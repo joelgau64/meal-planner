@@ -5,6 +5,9 @@ const DB_PLANNING = "dc70bd98-0691-41b9-abfc-5bde68630995";
 const DB_COURSES = "35f5b3b5-095f-4998-a014-9a112807e711";
 const DB_FRIGO = "3ba7bf2a-8f76-81bd-a878-dbf3ae8be0be";
 
+// Date locale AAAA-MM-JJ. toISOString() renvoie la date UTC : entre 0h et 2h (heure de Paris)
+// elle donnait la veille → mauvais "aujourd'hui", mauvaise semaine, repas sur le mauvais jour.
+function localISO(d=new Date()){const x=new Date(d);return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`;}
 const DAYS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner"];
 const MOMENT_COLORS = {"Déjeuner":"#C2622D","Dîner":"#475569"};
@@ -18,10 +21,12 @@ const cache = {recettes:null,planning:null,courses:null};
 
 // ── Error logging ─────────────────────────────────────────────────────────────
 const errorLog = [];
+const errorListeners = new Set();
 function logError(context, error, details=null){
   const entry = {time:new Date().toLocaleTimeString('fr-FR'), context, message: error?.message||String(error), details};
   errorLog.push(entry);
   if(errorLog.length>50) errorLog.shift();
+  errorListeners.forEach(fn=>fn(errorLog.length));
   console.error(`[${context}]`, error, details||'');
 }
 const cacheTime = {recettes:0,planning:0,courses:0};
@@ -75,7 +80,9 @@ async function notionUpdate(pageId,properties){
 }
 
 // ── Notion helpers ────────────────────────────────────────────────────────────
-const nText=s=>({rich_text:[{text:{content:String(s||"").slice(0,2000)}}]});
+// Notion limite chaque segment rich_text à 2000 caractères, mais accepte jusqu'à 100 segments.
+// Avant : .slice(0,2000) → instructions/ingrédients longs tronqués EN SILENCE à l'enregistrement.
+const nText=s=>{const str=String(s||"");const chunks=[];for(let i=0;i<str.length&&chunks.length<100;i+=2000)chunks.push({text:{content:str.slice(i,i+2000)}});return{rich_text:chunks};};
 const nTitle=s=>({title:[{text:{content:String(s||"")}}]});
 const nNum=n=>({number:Number(n)||0});
 const nSel=s=>{
@@ -91,7 +98,7 @@ const nCheck=b=>({checkbox:!!b});
 const nUrl=u=>u?{url:u}:{url:null};
 
 function getTitle(page){const t=page.properties;for(const k of Object.keys(t)){if(t[k].type==="title"&&t[k].title?.[0]?.plain_text)return t[k].title[0].plain_text;}return"";}
-function getText(p){return p?.rich_text?.[0]?.plain_text||"";}
+function getText(p){return (p?.rich_text||[]).map(t=>t.plain_text||"").join("");} // tous les segments, pas seulement le 1er
 function getSelect(p){return p?.select?.name||"";}
 function getNum(p){return p?.number||0;}
 function getCheck(p){return p?.checkbox||false;}
@@ -348,20 +355,30 @@ const Icon=({name,size=18})=>{
 function Spinner({label="Chargement..."}){
   return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:40,color:"#64748B"}}><div style={{animation:"spin 1s linear infinite"}}><Icon name="loader" size={28}/></div><span style={{fontSize:13}}>{label}</span></div>);
 }
+// Un message commençant par ❌, ⚠️ ou "Erreur" s'affiche en rouge, sans coche verte, et reste plus longtemps.
 function Toast({message,onClose}){
-  useEffect(()=>{const t=setTimeout(onClose,3000);return()=>clearTimeout(t);},[onClose]);
-  return(<div style={{position:"fixed",bottom:"calc(70px + env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",background:"#0F172A",color:"#FFFFFF",padding:"12px 20px",borderRadius:12,fontSize:13,fontWeight:500,zIndex:1000,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:10,whiteSpace:"nowrap",maxWidth:"90vw"}}><span style={{color:"#4ADE80"}}><Icon name="check" size={16}/></span>{message}</div>);
+  const isError=/^(❌|⚠️|Erreur|Échec|Impossible)/i.test(String(message));
+  useEffect(()=>{const t=setTimeout(onClose,isError?6000:3000);return()=>clearTimeout(t);},[onClose,message,isError]);
+  return(<div role="status" aria-live="polite" onClick={onClose} style={{position:"fixed",bottom:"calc(76px + env(safe-area-inset-bottom))",left:"50%",transform:"translateX(-50%)",background:isError?"#7F1D1D":"#0F172A",color:"#FFFFFF",padding:"12px 18px",borderRadius:12,fontSize:13,fontWeight:500,zIndex:1000,boxShadow:"0 8px 32px rgba(0,0,0,0.25)",display:"flex",alignItems:"center",gap:10,maxWidth:"min(92vw,480px)",lineHeight:1.4}}>{!isError&&<span style={{color:"#4ADE80",flexShrink:0}}><Icon name="check" size={16}/></span>}{message}</div>);
 }
 function Modal({title,onClose,children,wide,full}){
+  const closeRef=useRef(onClose);closeRef.current=onClose;
+  useEffect(()=>{
+    const onKey=e=>{if(e.key==="Escape")closeRef.current?.();};
+    const prev=document.body.style.overflow;
+    document.body.style.overflow="hidden"; // le fond ne défile plus sous la modale
+    document.addEventListener("keydown",onKey);
+    return()=>{document.body.style.overflow=prev;document.removeEventListener("keydown",onKey);};
+  },[]);
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:500,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",zIndex:500,display:"flex",alignItems:"flex-end",justifyContent:"center",overscrollBehavior:"contain"}} onClick={onClose}>
       <style>{`@media(min-width:641px){.modal-inner{align-self:center!important;border-radius:16px!important;max-height:90vh!important;}}`}</style>
       <div className="modal-inner" onClick={e=>e.stopPropagation()}
         style={{background:"#FFFFFF",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:full?900:wide?680:560,maxHeight:"92vh",overflow:"auto",paddingBottom:"env(safe-area-inset-bottom)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:"1px solid #F1F5F9",position:"sticky",top:0,background:"#FFFFFF",zIndex:10}}>
           <div style={{width:40,height:4,borderRadius:2,background:"#E2E8F0",margin:"0 auto 0 auto",position:"absolute",left:"50%",transform:"translateX(-50%)",top:8}}/>
           <h3 style={{margin:0,fontSize:15,fontWeight:700,color:"#0F172A",fontFamily:"'Playfair Display', serif"}}>{title}</h3>
-          <button onClick={onClose} style={{background:"#F1F5F9",border:"none",color:"#64748B",cursor:"pointer",padding:6,borderRadius:8,display:"flex"}}><Icon name="close" size={16}/></button>
+          <button onClick={onClose} aria-label="Fermer" style={{background:"#F1F5F9",border:"none",color:"#64748B",cursor:"pointer",padding:10,borderRadius:10,display:"flex"}}><Icon name="close" size={18}/></button>
         </div>
         <div style={{padding:"16px 20px"}}>{children}</div>
       </div>
@@ -371,7 +388,7 @@ function Modal({title,onClose,children,wide,full}){
 function Field({label,children}){
   return(<div style={{marginBottom:16}}><label style={{display:"block",fontSize:11,fontWeight:600,color:"#64748B",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{label}</label>{children}</div>);
 }
-const inputStyle={width:"100%",background:"#F1F5F9",border:"1px solid #334155",borderRadius:8,color:"#0F172A",padding:"10px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
+const inputStyle={width:"100%",background:"#F8FAFC",border:"1px solid #CBD5E1",borderRadius:8,color:"#0F172A",padding:"10px 12px",fontSize:14,boxSizing:"border-box",outline:"none",fontFamily:"inherit"};
 const btnPrimary={padding:"12px",background:"#C2622D",border:"none",borderRadius:8,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",width:"100%",marginTop:8};
 const btnDisabled={...btnPrimary,background:"#F1F5F9",color:"#64748B",cursor:"default"};
 
@@ -520,7 +537,7 @@ function CookingMode({recette,scaled,portions,onClose,planningEntry,onCookComple
       const r1=await notionUpdate(planningEntry.id,{"Cuisiné":nCheck(true)});
       if(r1?.object==="error") throw new Error(r1.message||"Échec Cuisiné");
       if(recette.id){
-        const r2=await notionUpdate(recette.id,{"Fois cuisinée":nNum((recette.fois_cuisinee||0)+1),"Dernière cuisson":nDate(new Date().toISOString().split("T")[0])});
+        const r2=await notionUpdate(recette.id,{"Fois cuisinée":nNum((recette.fois_cuisinee||0)+1),"Dernière cuisson":nDate(localISO(new Date()))});
         if(r2?.object==="error") throw new Error(r2.message||"Échec Fois cuisinée");
       }
       toast&&toast("✓ Marqué cuisiné");
@@ -967,7 +984,7 @@ function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToPlanning
 
 // ── Add to Planning Modal ─────────────────────────────────────────────────────
 function AddToPlanningModal({recette,portions,mode,onClose,toast}){
-  const [date,setDate]=useState(new Date().toISOString().split("T")[0]);
+  const [date,setDate]=useState(localISO(new Date()));
   const [moment,setMoment]=useState("Dîner");
   const [saving,setSaving]=useState(false);
 
@@ -981,7 +998,7 @@ function AddToPlanningModal({recette,portions,mode,onClose,toast}){
       const day=now.getDay();
       const nextMonday=new Date(now);
       nextMonday.setDate(now.getDate()+(day===0?1:8-day));
-      targetDate=nextMonday.toISOString().split("T")[0];
+      targetDate=localISO(nextMonday);
     }
     await notionCreate(DB_PLANNING,{
       "Repas":nTitle(recette.nom),
@@ -1572,7 +1589,7 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
     const slots=[];
     for(let i=0;i<7;i++){
       const d=new Date(monday);d.setDate(monday.getDate()+i);
-      const dateStr=d.toISOString().split("T")[0];
+      const dateStr=localISO(d);
       slots.push({date:dateStr,moment:"Dîner",label:d.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric"})});
       if(i===5||i===6){ // samedi, dimanche → déjeuner aussi
         slots.push({date:dateStr,moment:"Déjeuner",label:d.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric"})});
@@ -1619,7 +1636,7 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
     // Règle poisson : si aucun poisson dans la sélection ET aucun cuisiné ces 7 derniers jours
     const hasFishPicked=picked.some(isFish);
     if(!hasFishPicked){
-      const weekAgo=new Date(Date.now()-7*24*3600*1000).toISOString().split("T")[0];
+      const weekAgo=localISO(new Date(Date.now()-7*24*3600*1000));
       const fishRecently=planning.some(p=>p.fait&&p.date&&p.date>=weekAgo&&(()=>{
         const r=recettes.find(x=>x.id===p.recette_id||x.nom===(p.recette||p.repas));
         return r&&isFish(r);
@@ -1751,11 +1768,24 @@ function WeekPlannerWizard({recettes,planning,onClose,onConfirm,toast}){
 
 // Date par défaut pour la planification : aujourd'hui, ou demain s'il est 18:00 passé.
 // (Le soir, on planifie généralement pour le lendemain.)
+// Fenêtre de chargement du planning : 8 dernières semaines + futur + file d'attente + repas sans date.
+// Avant : TOUTE la base Planning à chaque chargement → coût qui grossit chaque semaine (~1 requête Notion
+// séquentielle de plus par tranche de 100 repas). Conséquence assumée : naviguer à plus de 8 semaines
+// dans le passé affiche une grille vide.
+const PLANNING_HISTORY_DAYS=56;
+function planningWindowFilter(){
+  const since=localISO(new Date(Date.now()-PLANNING_HISTORY_DAYS*864e5));
+  return {or:[
+    {property:"Date",date:{on_or_after:since}},
+    {property:"Date",date:{is_empty:true}},
+    {property:"File d'attente",checkbox:{equals:true}},
+  ]};
+}
 function defaultPlanningDate(){
   const now=new Date();
   const d=new Date(now);
   if(now.getHours()>=18) d.setDate(d.getDate()+1);
-  return d.toISOString().split("T")[0];
+  return localISO(d);
 }
 
 function PlanningTab({toast}){
@@ -1808,16 +1838,17 @@ function PlanningTab({toast}){
     const cachedP=getCached("planning");
     const cachedR=getCached("recettes");
     if(cachedP&&!force)setPlanning(cachedP);
-    else{
-      if(!silent)setLoading(true);
-      try{const data=await notionQuery(DB_PLANNING);const parsed=(data.results||[]).map(parsePlanning);setPlanning(parsed);setCache("planning",parsed);}catch(e){console.error(e);}
-    }
     if(cachedR&&!force)setRecettes(cachedR);
-    else{
-      try{const data=await notionQuery(DB_RECETTES);const parsed=(data.results||[]).map(parseRecette);setRecettes(parsed);setCache("recettes",parsed);}catch(e){console.error(e);}
-    }
+    const needP=!cachedP||force, needR=!cachedR||force;
+    if(!needP&&!needR)return;
+    if(!silent&&needP)setLoading(true);
+    // Les deux requêtes partent en parallèle (avant : planning PUIS recettes, en série).
+    await Promise.all([
+      needP&&notionQuery(DB_PLANNING,planningWindowFilter()).then(data=>{const parsed=(data.results||[]).map(parsePlanning);setPlanning(parsed);setCache("planning",parsed);}).catch(e=>toast&&toast("❌ Planning non chargé : "+e.message)),
+      needR&&notionQuery(DB_RECETTES).then(data=>{const parsed=(data.results||[]).map(parseRecette);setRecettes(parsed);setCache("recettes",parsed);}).catch(e=>toast&&toast("❌ Recettes non chargées : "+e.message)),
+    ]);
     if(!silent)setLoading(false);
-  },[weekOffset]);
+  },[weekOffset,toast]);
 
   useEffect(()=>{load();},[load]);
 
@@ -1825,9 +1856,9 @@ function PlanningTab({toast}){
   useEffect(()=>{
     if(overdueMeals!==null||planning.length===0)return;
     const snooze=localStorage.getItem("overdueSnoozeUntil");
-    if(snooze&&new Date().toISOString().split("T")[0]<snooze)return;
+    if(snooze&&localISO(new Date())<snooze)return;
     if(sessionStorage.getItem("overdueChecked"))return;
-    const todayStr=new Date().toISOString().split("T")[0];
+    const todayStr=localISO(new Date());
     const overdue=planning.filter(p=>!p.queue&&!p.fait&&p.date&&p.date<todayStr);
     if(overdue.length>0){
       setOverdueMeals(overdue);
@@ -1874,8 +1905,8 @@ function PlanningTab({toast}){
 
   // Partage du menu de la semaine (WhatsApp / clipboard)
   const shareWeekMenu=()=>{
-    const weekStart=weekDates[0].toISOString().split("T")[0];
-    const weekEnd=weekDates[6].toISOString().split("T")[0];
+    const weekStart=localISO(weekDates[0]);
+    const weekEnd=localISO(weekDates[6]);
     const meals=planning
       .filter(p=>!p.queue&&p.date&&p.date>=weekStart&&p.date<=weekEnd)
       .sort((a,b)=>a.date.localeCompare(b.date)||(a.moment==="Déjeuner"?-1:1));
@@ -1908,7 +1939,7 @@ function PlanningTab({toast}){
 
   const save=async()=>{
     setSaving(true);
-    const targetDate=form.queue?(()=>{const now=new Date();const day=now.getDay();const nextMonday=new Date(now);nextMonday.setDate(now.getDate()+(day===0?1:8-day));return nextMonday.toISOString().split("T")[0];})():form.date;
+    const targetDate=form.queue?(()=>{const now=new Date();const day=now.getDay();const nextMonday=new Date(now);nextMonday.setDate(now.getDate()+(day===0?1:8-day));return localISO(nextMonday);})():form.date;
     await notionCreate(DB_PLANNING,{
       "Repas":nTitle(form.recetteQuery),"Date":nDate(targetDate),"Moment":nSel(form.moment),
       "Recette":nText(form.recetteQuery),"Recette ID":nText(form.recetteId),
@@ -1932,7 +1963,7 @@ function PlanningTab({toast}){
       const newCount=(recetteData.fois_cuisinee||0)+1;
       await notionUpdate(recetteData.id,{
         "Fois cuisinée":nNum(newCount),
-        "Dernière cuisson":nDate(new Date().toISOString().split("T")[0]),
+        "Dernière cuisson":nDate(localISO(new Date())),
       });
     }
     toast(`"${meal.recette}" cuisiné ✓`);setConfirming(null);
@@ -1970,8 +2001,7 @@ function PlanningTab({toast}){
 
   const isToday=d=>d.toDateString()===new Date().toDateString();
   const isPast=d=>d<new Date()&&!isToday(d);
-  const getMeals=date=>planning.filter(p=>p.date===date.toISOString().split("T")[0]&&!p.queue);
-  const getQueue=()=>planning.filter(p=>p.queue||(p.date&&p.date>=weekDates[0].toISOString().split("T")[0]&&p.date<=weekDates[6].toISOString().split("T")[0]&&!planning.find(x=>x.id===p.id&&!p.queue)));
+  const getMeals=date=>planning.filter(p=>p.date===localISO(date)&&!p.queue);
   const queueItems=planning.filter(p=>p.queue);
   const [clearingQueue,setClearingQueue]=useState(false);
   const [confirmClearQueue,setConfirmClearQueue]=useState(false);
@@ -2093,8 +2123,8 @@ function PlanningTab({toast}){
           <button onClick={()=>{
             const today=new Date();today.setHours(0,0,0,0);
             const twoWeeksLater=new Date(today);twoWeeksLater.setDate(today.getDate()+14);
-            const todayStr=today.toISOString().split("T")[0];
-            const limitStr=twoWeeksLater.toISOString().split("T")[0];
+            const todayStr=localISO(today);
+            const limitStr=localISO(twoWeeksLater);
             const planned=planning.filter(p=>!p.queue&&!p.fait&&p.date&&p.date>=todayStr&&p.date<=limitStr);
             const meals=[...queueItems.filter(m=>!m.fait),...planned];
             const unique=[];const seen=new Set();
@@ -2120,7 +2150,7 @@ function PlanningTab({toast}){
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:16}} className="planning-grid">
             {weekDates.map((date,i)=>{
               const meals=getMeals(date);const today=isToday(date);const past=isPast(date);
-              const dropKey=date.toISOString().split("T")[0];
+              const dropKey=localISO(date);
               return(
                 <div key={i}
                   onDragOver={e=>{e.preventDefault();setDragOver(dropKey);}}
@@ -2274,7 +2304,7 @@ function PlanningTab({toast}){
                 const d=new Date();const day=d.getDay();
                 const daysToMon=day===0?1:8-day; // prochain lundi
                 d.setDate(d.getDate()+daysToMon);
-                localStorage.setItem("overdueSnoozeUntil",d.toISOString().split("T")[0]);
+                localStorage.setItem("overdueSnoozeUntil",localISO(d));
                 setOverdueMeals([]);
                 toast("Rappel reporté à lundi");
               }} style={{flex:1,padding:"10px",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,color:"#475569",fontSize:13,fontWeight:600,cursor:"pointer"}}>
@@ -2366,9 +2396,6 @@ function CoursesTab({toast}){
   const [form,setForm]=useState({article:"",categorie:"Épicerie",quantite:"",semaine:"",recette:""});
   const [categorieTouched,setCategorieTouched]=useState(false); // true dès que l'utilisateur choisit la catégorie à la main
   const [saving,setSaving]=useState(false);
-  const [showCoursesModal,setShowCoursesModal]=useState(false);
-  const [coursesSelection,setCoursesSelection]=useState([]);
-  const [generatingCourses,setGeneratingCourses]=useState(false);
   const [editItem,setEditItem]=useState(null); // ligne en cours d'édition
   const [editCatTouched,setEditCatTouched]=useState(false);
   const [suggestions,setSuggestions]=useState([]); // autocomplétion sur l'historique
@@ -2549,7 +2576,6 @@ function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   const [cards,setCards]=useState([]);
   const [current,setCurrent]=useState(0);
   const [loading,setLoading]=useState(false);
-  const [importing,setImporting]=useState(false);
   const [done,setDone]=useState(false);
   const [liked,setLiked]=useState([]);
   const [importStatus,setImportStatus]=useState({}); // {cardTitre: 'loading'|'done'|'error'}
@@ -3072,7 +3098,7 @@ function FrigoTab({toast,onCookWith}){
 
   const saveDraft=async()=>{
     if(!draft?.article)return;
-    const today=new Date().toISOString().split("T")[0];
+    const today=localISO(new Date());
     try{
       const r=await notionCreate(DB_FRIGO,{
         "Article":nTitle(draft.article),
@@ -3238,7 +3264,8 @@ export default function App(){
   const [toastMsg,setToastMsg]=useState(null);
   const [showErrorPanel,setShowErrorPanel]=useState(false);
   const [errorCount,setErrorCount]=useState(0);
-  const toast=msg=>setToastMsg(msg);
+  const closeToast=useCallback(()=>setToastMsg(null),[]);
+  const toast=useCallback(msg=>setToastMsg(msg),[]); // référence stable → pas de re-render en cascade des onglets
 
   // Garder l'écran allumé dans toute l'app (Wake Lock API)
   useEffect(()=>{
@@ -3265,11 +3292,10 @@ export default function App(){
 
   // Surveiller les nouvelles erreurs
   useEffect(()=>{
-    const interval=setInterval(()=>{
-      if(errorLog.length>errorCount) setErrorCount(errorLog.length);
-    },1000);
-    return()=>clearInterval(interval);
-  },[errorCount]);
+    const fn=n=>setErrorCount(n);
+    errorListeners.add(fn);
+    return()=>{errorListeners.delete(fn);};
+  },[]);
   const tabs=[
     {id:"recettes",  label:"Recettes",  emoji:"📖"},
     {id:"planning",  label:"Planning",  emoji:"📅"},
@@ -3289,7 +3315,6 @@ export default function App(){
   return(
     <div style={{minHeight:"100vh",background:"#F8FAFC",color:"#0F172A",fontFamily:"'DM Sans', system-ui, sans-serif",paddingBottom:"calc(64px + env(safe-area-inset-bottom))"}}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap');
         *{box-sizing:border-box;}
         html,body,#root{overflow-x:hidden;max-width:100vw;}
         @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
@@ -3297,6 +3322,11 @@ export default function App(){
         ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#F1F5F9;}::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:4px;}
         select option{background:#FFFFFF;}
         .tab-content{animation:slideUp 0.18s ease;}
+        button,a,[role=button]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+        button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid #C2622D;outline-offset:2px;}
+        input:focus,textarea:focus,select:focus{border-color:#C2622D!important;box-shadow:0 0 0 3px rgba(194,98,45,0.15);background:#FFFFFF!important;}
+        button:disabled{cursor:not-allowed;}
+        @media (prefers-reduced-motion: reduce){*{animation-duration:0.01ms!important;transition-duration:0.01ms!important;}}
         @media(max-width:480px){
           .btn-label{display:none;}
         }
@@ -3321,6 +3351,7 @@ export default function App(){
           .recipe-detail-grid{grid-template-columns:1fr!important;}
           /* Typographie */
           body{font-size:15px!important;}
+          input,textarea,select{font-size:16px!important;} /* < 16px = zoom automatique iOS au focus */
         }
         @media(min-width:641px){
           .bottom-nav{display:none!important;}
@@ -3387,7 +3418,7 @@ export default function App(){
         {tabs.map(t=>{
           const active=tab===t.id;
           return(
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            <button key={t.id} onClick={()=>setTab(t.id)} aria-label={t.label} aria-current={active?"page":undefined} style={{
               flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
               gap:3,padding:"12px 4px 10px",border:"none",background:"transparent",
               color:active?"#C2622D":"#94A3B8",cursor:"pointer",fontFamily:"inherit",
@@ -3401,7 +3432,7 @@ export default function App(){
         })}
       </nav>
 
-      {toastMsg&&<Toast message={toastMsg} onClose={()=>setToastMsg(null)}/>}
+      {toastMsg&&<Toast key={toastMsg} message={toastMsg} onClose={closeToast}/>}
       {showErrorPanel&&<ErrorPanel onClose={()=>{setShowErrorPanel(false);setErrorCount(0);}}/>}
     </div>
   );

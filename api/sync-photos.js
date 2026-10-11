@@ -1,3 +1,4 @@
+import { guard } from './_guard.js';
 const NOTION_VERSION = '2022-06-28';
 const DB_RECETTES = '39c7b0f8-bf02-4893-bc05-6d82b8c38617';
 
@@ -150,8 +151,7 @@ function findMatch(recipeName, urls) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!guard(req, res)) return;
 
   const token = process.env.NOTION_TOKEN;
   

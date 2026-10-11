@@ -1,10 +1,10 @@
+import { guard } from './_guard.js';
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!guard(req, res)) return;
 
   const url = req.query.url || (req.body && req.body.url);
   if (!url) return res.status(400).json({ error: 'url required' });
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ error: 'URL http(s) uniquement' });
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 8000); // 8s max — évite les pages qui pendent

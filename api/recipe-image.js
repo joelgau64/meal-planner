@@ -1,10 +1,10 @@
+import { guard } from './_guard.js';
 // GET /api/recipe-image?q=nom+de+la+recette  → propose des images web pour une recette.
 // Utilise Brave Image Search. Retourne plusieurs candidats pour que l'utilisateur choisisse.
 // Aucune écriture : c'est à l'app d'enregistrer l'URL choisie après approbation.
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!guard(req, res)) return;
 
   const q = req.query.q;
   if (!q) return res.status(400).json({ error: 'q requis' });
