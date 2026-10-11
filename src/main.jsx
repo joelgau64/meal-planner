@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import './styles.css'
 
 // ── Jeton d'accès aux routes /api ────────────────────────────────────────────
 // Ajoute x-app-token à tous les appels same-origin vers /api/. Si le serveur répond 401
