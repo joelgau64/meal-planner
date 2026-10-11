@@ -351,6 +351,8 @@ const Icon=({name,size=18})=>{
     search:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
     clock:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>,
     image:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
+    undo:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg>,
+    share:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>,
     people:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>,
   };
   return icons[name]||null;
@@ -405,7 +407,7 @@ function RecipeThumb({recette,onClick,height=128}){
   const nom=recette.nom||"?";
   const [bg,fg]=THUMB_TINTS[[...nom].reduce((a,c)=>a+c.charCodeAt(0),0)%THUMB_TINTS.length];
   if(recette.photo&&!broken)return(<img src={recette.photo} alt="" loading="lazy" decoding="async" onClick={onClick} onError={()=>setBroken(true)} style={{width:"100%",height,objectFit:"cover",display:"block",background:bg}}/>);
-  return(<div onClick={onClick} aria-hidden="true" style={{height,background:bg,color:fg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:40,fontWeight:700,letterSpacing:"-0.04em",opacity:0.9}}>{nom.trim().charAt(0).toUpperCase()}</div>);
+  return(<div onClick={onClick} aria-hidden="true" style={{height,background:bg,color:fg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:Math.round(height*0.42),fontWeight:700,letterSpacing:"-0.04em",opacity:0.9}}>{nom.trim().charAt(0).toUpperCase()}</div>);
 }
 function ScoreBadge({score}){
   if(score===null||score===undefined)return null;
@@ -1803,6 +1805,87 @@ function defaultPlanningDate(){
   return localISO(d);
 }
 
+// Repas dans la grille du planning. Tap = fiche recette, rond = "cuisiné", flèche = remettre en file.
+// Appui long (400 ms) = glisser vers un autre jour ou vers la file.
+function MealChip({meal,recette,ctx}){
+  const {planning,setPlanning,dragItem,setDragItem,setDragOver,handleDrop,touchDragRef,confirmCuisine,confirming,toast,onView,onMoveToQueue}=ctx;
+  const longPressTimer=useRef(null);
+  const isDragging=useRef(false);
+  const touchStartPos=useRef(null);
+  const handleTouchStart=e=>{
+    isDragging.current=false;
+    const touch=e.touches[0];
+    touchStartPos.current={x:touch.clientX,y:touch.clientY};
+    const node=e.currentTarget;
+    longPressTimer.current=setTimeout(()=>{
+      isDragging.current=true;
+      navigator.vibrate?.(15);
+      const ghost=node.cloneNode(true);
+      ghost.style.cssText=`position:fixed;top:${touch.clientY-28}px;left:${touch.clientX-120}px;width:240px;opacity:0.92;z-index:9999;pointer-events:none;border-radius:14px;background:#fff;box-shadow:0 12px 32px rgba(28,25,23,0.18);`;
+      document.body.appendChild(ghost);
+      touchDragRef.current={item:meal,ghost};
+      setDragItem(meal);
+    },400);
+  };
+  const handleTouchMove=e=>{
+    const touch=e.touches[0];
+    if(!isDragging.current){
+      if(touchStartPos.current){
+        const dx=Math.abs(touch.clientX-touchStartPos.current.x),dy=Math.abs(touch.clientY-touchStartPos.current.y);
+        if(dx>8||dy>8)clearTimeout(longPressTimer.current);
+      }
+      return;
+    }
+    if(!touchDragRef.current)return;
+    e.preventDefault();
+    touchDragRef.current.ghost.style.top=touch.clientY-28+"px";
+    touchDragRef.current.ghost.style.left=touch.clientX-120+"px";
+    const zone=document.elementFromPoint(touch.clientX,touch.clientY)?.closest("[data-dropzone]");
+    setDragOver(zone?.dataset.dropzone||null);
+  };
+  const handleTouchEnd=e=>{
+    clearTimeout(longPressTimer.current);
+    if(!isDragging.current||!touchDragRef.current){setDragItem(null);return;}
+    const item=touchDragRef.current.item;
+    const touch=e.changedTouches[0];
+    const zone=document.elementFromPoint(touch.clientX,touch.clientY)?.closest("[data-dropzone]");
+    if(zone){
+      const key=zone.dataset.dropzone;
+      if(key==="queue"){
+        const updated=planning.map(p=>p.id===item.id?{...p,queue:true}:p);
+        setPlanning(updated);setCache("planning",updated);
+        notionUpdate(item.id,{"File d'attente":nCheck(true)});
+        toast(`"${item.recette||item.repas}" remis en file d'attente ✓`);
+      }else handleDrop(key,undefined,item);
+    }
+    try{touchDragRef.current.ghost.remove();}catch{/* déjà retiré */}
+    touchDragRef.current=null;
+    setDragItem(null);setDragOver(null);
+    isDragging.current=false;
+  };
+  const accent=MOMENT_COLORS[meal.moment]||"#78716C";
+  const busy=confirming===meal.id;
+  return(
+    <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
+      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+      className="meal-chip"
+      style={{display:"flex",alignItems:"center",gap:10,padding:6,background:"#FFFFFF",borderRadius:14,boxShadow:"0 0 0 1px rgba(28,25,23,0.06)",opacity:dragItem?.id===meal.id?0.35:1,cursor:"grab",WebkitUserSelect:"none",userSelect:"none"}}>
+      <div className="meal-thumb" onClick={()=>onView(meal)} style={{width:44,height:44,borderRadius:10,overflow:"hidden",flexShrink:0,opacity:meal.fait?0.55:1}}>
+        <RecipeThumb recette={recette||{nom:meal.recette||meal.repas}} height={44}/>
+      </div>
+      <div className="meal-body" onClick={()=>onView(meal)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+        <div style={{fontSize:14,fontWeight:600,color:meal.fait?"#A8A29E":"#1C1917",textDecoration:meal.fait?"line-through":"none",lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{meal.recette||meal.repas}</div>
+        {meal.moment&&<div style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"#78716C",marginTop:2}}><span style={{width:6,height:6,borderRadius:999,background:accent}}/>{meal.moment}</div>}
+      </div>
+      {!meal.fait&&<button onClick={e=>{e.stopPropagation();onMoveToQueue(meal);}} onTouchStart={e=>e.stopPropagation()} aria-label="Remettre en file d'attente" title="Remettre en file" className="icon-btn meal-queue"><Icon name="undo" size={16}/></button>}
+      <button onClick={e=>{e.stopPropagation();if(!meal.fait&&!busy)confirmCuisine(meal);}} onTouchStart={e=>e.stopPropagation()} disabled={meal.fait||busy} aria-label={meal.fait?"Cuisiné":"Marquer comme cuisiné"} title={meal.fait?"Cuisiné":"Marquer comme cuisiné"}
+        style={{width:36,height:36,borderRadius:999,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:meal.fait?"default":"pointer",border:meal.fait?"none":"2px solid #D6D3D1",background:meal.fait?"#15803D":"transparent",color:meal.fait?"#fff":"transparent",opacity:busy?0.5:1,padding:0}}>
+        <Icon name="check" size={16}/>
+      </button>
+    </div>
+  );
+}
+
 function PlanningTab({toast}){
   const [planning,setPlanning]=useState([]);
   const [recettes,setRecettes]=useState([]);
@@ -2005,12 +2088,13 @@ function PlanningTab({toast}){
   };
 
   // Drag and drop
-  const handleDrop=async(targetDate,targetMoment)=>{
-    if(!dragItem)return;
-    const updated=planning.map(p=>p.id===dragItem.id?{...p,date:targetDate,moment:targetMoment,queue:false}:p);
+  const handleDrop=async(targetDate,targetMoment,item=dragItem)=>{
+    if(!item)return;
+    const moment=item.moment||targetMoment||"Dîner";
+    const updated=planning.map(p=>p.id===item.id?{...p,date:targetDate,moment,queue:false}:p);
     setPlanning(updated);setCache("planning",updated);
-    notionUpdate(dragItem.id,{"Date":nDate(targetDate),"Moment":nSel(targetMoment),"File d'attente":nCheck(false)});
-    toast(`"${dragItem.recette}" déplacé ✓`);
+    notionUpdate(item.id,{"Date":nDate(targetDate),"Moment":nSel(moment),"File d'attente":nCheck(false)});
+    toast(`"${item.recette||item.repas}" déplacé ✓`);
     setDragItem(null);setDragOver(null);
   };
 
@@ -2046,95 +2130,19 @@ function PlanningTab({toast}){
   };
   const weekLabel=()=>({0:"Cette semaine",1:"Semaine prochaine","-1":"Semaine dernière"}[weekOffset]||`Sem. ${weekOffset>0?"+":""}${weekOffset}`);
 
-  const MealChip=({meal,onViewRecette,onMoveToQueue})=>{
-    const longPressTimer=useRef(null);
-    const isDragging=useRef(false);
-
-    const touchStartPos=useRef(null);
-
-    const handleTouchStart=(e)=>{
-      isDragging.current=false;
-      const touch=e.touches[0];
-      touchStartPos.current={x:touch.clientX,y:touch.clientY};
-      longPressTimer.current=setTimeout(()=>{
-        isDragging.current=true;
-        const ghost=e.currentTarget.cloneNode(true);
-        ghost.style.cssText=`position:fixed;top:${touch.clientY-30}px;left:${touch.clientX-80}px;width:160px;opacity:0.85;z-index:9999;pointer-events:none;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.2);`;
-        document.body.appendChild(ghost);
-        touchDragRef.current={item:meal,ghost,startX:touch.clientX,startY:touch.clientY};
-        setDragItem(meal);
-      },400); // 400ms = long press plus sûr
-    };
-
-    const handleTouchMove=(e)=>{
-      const touch=e.touches[0];
-      if(!isDragging.current){
-        // Annuler si mouvement trop important avant long press
-        if(touchStartPos.current){
-          const dx=Math.abs(touch.clientX-touchStartPos.current.x);
-          const dy=Math.abs(touch.clientY-touchStartPos.current.y);
-          if(dx>8||dy>8) clearTimeout(longPressTimer.current);
-        }
-        return;
-      }
-      if(!touchDragRef.current)return;
-      e.preventDefault(); // Bloque scroll ET pull-to-refresh pendant le drag
-      touchDragRef.current.ghost.style.top=touch.clientY-30+"px";
-      touchDragRef.current.ghost.style.left=touch.clientX-80+"px";
-      const el=document.elementFromPoint(touch.clientX,touch.clientY);
-      const zone=el?.closest("[data-dropzone]");
-      setDragOver(zone?.dataset.dropzone||null);
-    };
-
-    const handleTouchEnd=(e)=>{
-      clearTimeout(longPressTimer.current);
-      if(!isDragging.current){setDragItem(null);return;}
-      if(!touchDragRef.current)return;
-      const touch=e.changedTouches[0];
-      const el=document.elementFromPoint(touch.clientX,touch.clientY);
-      const zone=el?.closest("[data-dropzone]");
-      if(zone){
-        const key=zone.dataset.dropzone;
-        if(key==="queue"){
-          const updated=planning.map(p=>p.id===dragItem.id?{...p,queue:true}:p);
-          setPlanning(updated);
-          notionUpdate(dragItem.id,{"File d'attente":nCheck(true)});
-          toast(`"${dragItem.recette}" remis en file d'attente ✓`);
-        } else { handleDrop(key,"Dîner"); }
-      }
-      try{touchDragRef.current.ghost.remove();}catch(e){}
-      touchDragRef.current=null;
-      setDragItem(null);setDragOver(null);
-      isDragging.current=false;
-    };
-
-    return(
-    <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
-      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
-      style={{borderRadius:10,overflow:"hidden",marginBottom:4,opacity:dragItem?.id===meal.id?0.4:1,cursor:"grab"}}>
-      <div style={{padding:"4px 7px",fontSize:11,fontWeight:600,background:`${MOMENT_COLORS[meal.moment]||"#78716C"}22`,color:MOMENT_COLORS[meal.moment]||"#A8A29E",lineHeight:1.3,textDecoration:meal.fait?"line-through":"none",opacity:meal.fait?0.5:1,display:"flex",alignItems:"center",gap:4}}>
-        <Icon name="drag" size={8}/>
-        <span style={{flex:1,cursor:"pointer"}} onClick={(e)=>{e.stopPropagation();onViewRecette&&onViewRecette(meal);}}>{meal.recette||meal.repas}</span>
-      </div>
-      <div style={{display:"flex",gap:2}}>
-        <button onClick={(e)=>{e.stopPropagation();const updated=setPlanning?setPlanning:null;/* handled via prop */onMoveToQueue&&onMoveToQueue(meal);}} style={{flex:1,padding:"2px",background:"#F5F4F2",border:"none",color:"#A8A29E",fontSize:11,fontWeight:600,cursor:"pointer"}}>↩ File</button>
-        {!meal.fait&&<button onClick={()=>confirmCuisine(meal)} disabled={confirming===meal.id} style={{flex:1,padding:"2px",background:"#F5F4F2",border:"none",color:"#A8A29E",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Cuisiné</button>}
-        {meal.fait&&<div style={{flex:1,padding:"2px 7px",background:"#D1FAE5",fontSize:11,color:"#065F46",fontWeight:700,textAlign:"center"}}>✓ fait</div>}
-      </div>
-    </div>
-    );
-  };
-
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <button onClick={()=>setWeekOffset(w=>w-1)} style={{background:"#F5F4F2",border:"none",borderRadius:10,color:"#78716C",cursor:"pointer",padding:"6px 10px",transform:"rotate(180deg)"}}><Icon name="arrow" size={16}/></button>
-          <span style={{fontSize:14,fontWeight:700,color:"#1C1917"}}>{weekLabel()}</span>
-          <button onClick={()=>setWeekOffset(w=>w+1)} style={{background:"#F5F4F2",border:"none",borderRadius:10,color:"#78716C",cursor:"pointer",padding:"6px 10px"}}><Icon name="arrow" size={16}/></button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,gap:10}}>
+        <div style={{display:"flex",alignItems:"center",gap:0,minWidth:0,flex:1}}>
+          <button onClick={()=>setWeekOffset(w=>w-1)} aria-label="Semaine précédente" className="icon-btn" style={{transform:"rotate(180deg)"}}><Icon name="arrow" size={18}/></button>
+          <button onClick={()=>setWeekOffset(0)} title="Revenir à cette semaine" style={{background:"none",border:"none",padding:"2px 2px",cursor:weekOffset?"pointer":"default",textAlign:"left",fontFamily:"inherit",minWidth:0,overflow:"hidden"}}>
+            <div className="week-label" style={{fontSize:16,fontWeight:700,color:"#1C1917",letterSpacing:"-0.01em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{weekLabel()}</div>
+            <div style={{fontSize:12,color:"#78716C",whiteSpace:"nowrap"}}>{weekDates[0].toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} – {weekDates[6].toLocaleDateString("fr-FR",{day:"numeric",month:"short"})}</div>
+          </button>
+          <button onClick={()=>setWeekOffset(w=>w+1)} aria-label="Semaine suivante" className="icon-btn"><Icon name="arrow" size={18}/></button>
         </div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          <button onClick={()=>load(true)} style={{padding:"8px 10px",background:"#FFFFFF",border:"1px solid #ECE9E6",borderRadius:10,color:"#78716C",cursor:"pointer"}}><Icon name="refresh" size={14}/></button>
+        <div style={{display:"flex",gap:4,alignItems:"center",flexShrink:0}}>
+          <button onClick={()=>setShowWeekWizard(true)} aria-label="Planifier ma semaine" title="Planifier ma semaine" className="icon-btn"><Icon name="sparkle" size={18}/></button>
           <button onClick={()=>{
             const today=new Date();today.setHours(0,0,0,0);
             const twoWeeksLater=new Date(today);twoWeeksLater.setDate(today.getDate()+14);
@@ -2146,57 +2154,52 @@ function PlanningTab({toast}){
             meals.forEach(m=>{const k=m.recette||m.repas;if(k&&!seen.has(k)){seen.add(k);unique.push(m);}});
             setCoursesSelection(unique.map(m=>({...m,selected:true})));
             setShowCoursesModal(true);
-          }} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFFFFF",border:"1px solid #ECE9E6",borderRadius:10,color:"#78716C",cursor:"pointer",fontSize:13,fontWeight:600}}>
-            <Icon name="cart" size={15}/><span className="btn-label">Courses</span>
-          </button>
-          <button onClick={shareWeekMenu} title="Partager le menu de la semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFFFFF",border:"1px solid #ECE9E6",borderRadius:10,color:"#78716C",cursor:"pointer",fontSize:13,fontWeight:600}}>
-            📤
-          </button>
-          <button onClick={()=>setShowWeekWizard(true)} title="Planifier ma semaine" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 12px",background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,color:"#C2622D",cursor:"pointer",fontSize:13,fontWeight:600}}>
-            🗓️<span className="btn-label"> Semaine</span>
-          </button>
-          <button onClick={()=>{setForm(f=>({...f,date:defaultPlanningDate(),queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 16px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/><span className="btn-label">Ajouter</span></button>
+          }} aria-label="Générer les courses" title="Générer les courses" className="icon-btn"><Icon name="cart" size={18}/></button>
+          <button onClick={shareWeekMenu} aria-label="Partager le menu" title="Partager le menu de la semaine" className="icon-btn hide-xs"><Icon name="share" size={18}/></button>
+          <button onClick={()=>{setForm(f=>({...f,date:defaultPlanningDate(),queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} aria-label="Ajouter un repas" style={{display:"flex",alignItems:"center",gap:6,height:40,padding:"0 14px",marginLeft:4,background:"#C2622D",border:"none",borderRadius:999,color:"#fff",fontWeight:600,fontSize:14,cursor:"pointer"}}><Icon name="plus" size={16}/><span className="btn-label">Ajouter</span></button>
         </div>
       </div>
 
       {loading?<Spinner label="Chargement..."/>:(
         <div>
-          {/* Week grid */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:16}} className="planning-grid">
+          {/* Semaine */}
+          <div className="planning-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:8,marginBottom:20}}>
             {weekDates.map((date,i)=>{
               const meals=getMeals(date);const today=isToday(date);const past=isPast(date);
               const dropKey=localISO(date);
+              const over=dragOver===dropKey;
+              const ctx={planning,setPlanning,dragItem,setDragItem,setDragOver,handleDrop,touchDragRef,confirmCuisine,confirming,toast,
+                onView:meal=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(meal);}},
+                onMoveToQueue:meal=>{
+                  const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
+                  setPlanning(updated);setCache("planning",updated);
+                  notionUpdate(meal.id,{"File d'attente":nCheck(true),"Date":nDate(null)});
+                  toast(`"${meal.recette||meal.repas}" remis en file d'attente ✓`);
+                }};
               return(
-                <div key={i}
+                <div key={dropKey} className="day-cell" data-dropzone={dropKey}
                   onDragOver={e=>{e.preventDefault();setDragOver(dropKey);}}
                   onDragLeave={()=>setDragOver(null)}
-                  onDrop={()=>handleDrop(dropKey,"Dîner")}
-                  data-dropzone={dropKey}
-                  style={{background:dragOver===dropKey?"#FEF3C7":today?"#FFF7ED":"#FFFFFF",border:`1px solid ${dragOver===dropKey?"#C2622D":today?"#C2622D":"#ECE9E6"}`,borderRadius:10,padding:8,minHeight:120,opacity:past?0.75:1,transition:"all 0.15s"}}>
-                  <div className="day-header" style={{marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                    <div>
-                      <div style={{fontSize:11,fontWeight:600,color:today?"#C2622D":"#78716C",textTransform:"uppercase"}}>{DAYS[i].slice(0,3)}</div>
-                      <div style={{fontSize:17,fontWeight:800,color:today?"#C2622D":"#1C1917",letterSpacing:"-0.01em"}}>{date.getDate()}</div>
-                    </div>
-                    <button onClick={()=>{setForm(f=>({...f,date:dropKey,queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} title="Ajouter un repas ce jour" style={{background:"#FFF7ED",border:"1px solid #FDBA74",borderRadius:10,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#C2622D",fontSize:16,lineHeight:1,padding:0,flexShrink:0}}>+</button>
+                  onDrop={()=>handleDrop(dropKey)}
+                  style={{background:over?"#FBEDE4":"transparent",outline:over?"2px dashed #C2622D":"none",outlineOffset:-2,borderRadius:16,padding:6,display:"flex",flexDirection:"column",gap:8,opacity:past&&!over?0.72:1,transition:"background .15s"}}>
+                  <div className="day-header" style={{display:"flex",alignItems:"center",gap:8,padding:"2px 4px"}}>
+                    <span style={{fontSize:12,fontWeight:600,color:today?"#C2622D":"#78716C",textTransform:"capitalize"}}>{DAYS[i].slice(0,3).toLowerCase()}</span>
+                    <span style={{width:28,height:28,borderRadius:999,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,background:today?"#C2622D":"transparent",color:today?"#fff":"#1C1917"}}>{date.getDate()}</span>
                   </div>
-                  {meals.length===0&&<div style={{fontSize:11,color:"#A8A29E",textAlign:"center",paddingTop:8}}>—</div>}
-                  {meals.map((m,j)=><MealChip key={j} meal={m}
-  onViewRecette={(meal)=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(meal);}}}
-  onMoveToQueue={(meal)=>{
-    const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
-    setPlanning(updated);
-    notionUpdate(meal.id,{"File d'attente":nCheck(true),"Date":nDate(null)});
-    toast(`"${meal.recette||meal.repas}" remis en file d'attente ✓`);
-  }}
-/>)}
+                  <div className="day-meals" style={{display:"flex",flexDirection:"column",gap:6,flex:1,minWidth:0}}>
+                    {meals.map(m=><MealChip key={m.id} meal={m} recette={recettes.find(x=>x.id===m.recette_id)||recettes.find(x=>x.nom===(m.recette||m.repas))} ctx={ctx}/>)}
+                    {!past&&<button onClick={()=>{setForm(f=>({...f,date:dropKey,queue:false,recetteQuery:"",recetteId:""}));setShowForm(true);}} className="add-slot" aria-label={`Ajouter un repas ${DAYS[i]}`}>
+                      <Icon name="plus" size={14}/>{meals.length===0&&<span className="add-slot-label">Ajouter</span>}
+                    </button>}
+                    {past&&meals.length===0&&<div style={{fontSize:12,color:"#A8A29E",padding:"10px 4px"}}>—</div>}
+                  </div>
                 </div>
               );
             })}
           </div>
 
           {/* Queue */}
-          <div style={{background:"#F5F4F2",border:"1px solid #ECE9E6",borderRadius:14,padding:16}}
+          <div className="card" style={{padding:16,outline:dragOver==="queue"?"2px dashed #C2622D":"none",outlineOffset:-2}}
             onDragOver={e=>{e.preventDefault();setDragOver("queue");}}
             onDragLeave={()=>setDragOver(null)}
             data-dropzone="queue"
@@ -2208,9 +2211,9 @@ function PlanningTab({toast}){
               setDragItem(null);setDragOver(null);
             }}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
-              <Icon name="queue" size={14}/>
-              <span style={{fontSize:12,fontWeight:700,color:"#78716C",textTransform:"uppercase",letterSpacing:"0.08em"}}>File d'attente</span>
-              <span style={{fontSize:11,color:"#78716C",marginLeft:"auto"}}>Glisser vers un jour</span>
+              <span style={{fontSize:16,fontWeight:700,color:"#1C1917",letterSpacing:"-0.01em"}}>À caser</span>
+              {queueItems.length>0&&<span style={{fontSize:12,fontWeight:700,color:"#78716C",background:"#F5F4F2",borderRadius:999,padding:"2px 8px"}}>{queueItems.length}</span>}
+              <span style={{fontSize:12,color:"#A8A29E",marginLeft:"auto"}}>appui long pour glisser</span>
               {queueItems.length>0&&!confirmClearQueue&&(
                 <button onClick={()=>setConfirmClearQueue(true)} style={{fontSize:11,color:"#DC2626",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,padding:"3px 10px",cursor:"pointer",fontWeight:600,fontFamily:"inherit"}}>Vider</button>
               )}
@@ -2249,13 +2252,13 @@ function PlanningTab({toast}){
                     const el=document.elementFromPoint(touch.clientX,touch.clientY);
                     const zone=el?.closest("[data-dropzone]");
                     if(zone&&zone.dataset.dropzone!=="queue"){
-                      handleDrop(zone.dataset.dropzone,"Dîner");
+                      handleDrop(zone.dataset.dropzone,undefined,touchDragRef.current.item);
                     }
                     touchDragRef.current.ghost.remove();
                     touchDragRef.current=null;
                     setDragItem(null);setDragOver(null);
                   }}
-                  style={{padding:"6px 12px",background:`${MOMENT_COLORS[m.moment]||"#78716C"}22`,border:`1px solid ${MOMENT_COLORS[m.moment]||"#78716C"}44`,borderRadius:999,fontSize:12,fontWeight:600,color:MOMENT_COLORS[m.moment]||"#A8A29E",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,touchAction:"none"}}>
+                  style={{padding:"8px 10px 8px 14px",background:"#FAF9F7",boxShadow:"0 0 0 1px rgba(28,25,23,0.08)",borderRadius:999,fontSize:13,fontWeight:600,color:"#1C1917",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,touchAction:"none"}}>
                   <span onClick={e=>{e.stopPropagation();const r=recettes.find(x=>x.id===m.recette_id||x.nom===(m.recette||m.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(m);}}} style={{cursor:"pointer",flex:1}}>
                     <Icon name="drag" size={10}/>{m.recette||m.repas}
                   </span>
@@ -3341,6 +3344,21 @@ export default function App(){
         .card{background:#FFFFFF;border-radius:16px;box-shadow:0 1px 2px rgba(28,25,23,0.05),0 0 0 1px rgba(28,25,23,0.05);transition:box-shadow .2s,transform .2s;}
         @media(hover:hover){.card:hover{box-shadow:0 8px 24px rgba(28,25,23,0.08),0 0 0 1px rgba(28,25,23,0.06);transform:translateY(-2px);}}
         .card:active{transform:scale(0.985);}
+        .icon-btn{width:40px;height:40px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:none;border-radius:999px;background:transparent;color:#57534E;cursor:pointer;padding:0;transition:background .15s;}
+        .icon-btn:hover{background:#F5F4F2;} .icon-btn:active{background:#ECE9E6;}
+        .meal-chip .icon-btn{width:36px;height:36px;color:#A8A29E;}
+        @media(min-width:641px){
+          .meal-chip{flex-wrap:wrap;gap:6px!important;}
+          .meal-chip .meal-thumb{width:100%!important;height:64px!important;}
+          .meal-chip .meal-thumb>*{height:100%!important;}
+          .meal-chip .meal-body{flex:1 1 100%!important;padding:0 2px;}
+          .meal-chip .meal-queue{margin-left:auto;}
+          .meal-chip .meal-body+button{margin-left:auto;}
+        }
+        @media(max-width:380px){ .hide-xs{display:none!important;} }
+        @media(max-width:440px){ .icon-btn{width:34px;height:34px;} .week-label{font-size:15px!important;} }
+        .add-slot{display:flex;align-items:center;justify-content:center;gap:6px;min-height:40px;border:1.5px dashed #E2DED9;border-radius:14px;background:transparent;color:#A8A29E;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .15s;}
+        .add-slot:hover,.add-slot:active{border-color:#C2622D;color:#C2622D;background:#FBEDE4;}
         button,a,[role=button]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
         button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid #C2622D;outline-offset:2px;}
         input:focus,textarea:focus,select:focus{border-color:#C2622D!important;box-shadow:0 0 0 3px rgba(194,98,45,0.15);background:#FFFFFF!important;}
@@ -3351,9 +3369,9 @@ export default function App(){
         }
         @media(max-width:640px){
           /* Planning */
-          .planning-grid{grid-template-columns:1fr!important;}
-          .planning-grid>div{min-height:auto!important;flex-direction:row!important;display:flex!important;align-items:flex-start!important;gap:10px!important;}
-          .planning-grid>div>.day-header{min-width:52px!important;flex-shrink:0!important;}
+          .planning-grid{grid-template-columns:1fr!important;gap:2px!important;}
+          .planning-grid>.day-cell{flex-direction:row!important;align-items:flex-start!important;gap:6px!important;padding:8px 4px!important;border-bottom:1px solid #F0EDEA;border-radius:0!important;}
+          .planning-grid>.day-cell>.day-header{flex-direction:column!important;gap:2px!important;width:44px!important;flex-shrink:0!important;padding:4px 0 0!important;}
           /* Modales */
           .modal-inner{border-radius:20px 20px 0 0!important;max-height:92vh!important;position:fixed!important;bottom:0!important;left:0!important;right:0!important;margin:0!important;width:100%!important;max-width:100%!important;}
           /* Navigation */
