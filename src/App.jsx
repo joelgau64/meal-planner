@@ -2417,6 +2417,9 @@ function CoursesTab({toast}){
   const [editItem,setEditItem]=useState(null); // ligne en cours d'édition
   const [editCatTouched,setEditCatTouched]=useState(false);
   const [suggestions,setSuggestions]=useState([]); // autocomplétion sur l'historique
+  const [quick,setQuick]=useState(""); // saisie rapide en tête de liste
+  const [quickSaving,setQuickSaving]=useState(false);
+  const [showBought,setShowBought]=useState(false);
 
   // Historique normalisé des articles déjà utilisés (pour normer l'orthographe).
   // On garde la 1re orthographe rencontrée par forme normalisée.
@@ -2490,54 +2493,115 @@ function CoursesTab({toast}){
     setCache("courses",null);load(true,true);
   };
 
-  // Group and merge quantities
-  const grouped=sortBy==="categorie"
-    ?courses.reduce((acc,c)=>{const k=c.categorie||"Autre";if(!acc[k])acc[k]=[];acc[k].push(c);return acc;},{})
-    :courses.reduce((acc,c)=>{const k=c.recette||"Sans recette";if(!acc[k])acc[k]=[];acc[k].push(c);return acc;},{});
+  const quickAdd=async()=>{
+    const article=quick.trim();
+    if(!article||quickSaving)return;
+    const norm=x=>(x||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+    const known=articleHistory.find(h=>norm(h.article)===norm(article));
+    const categorie=known?.categorie||guessCategory(article);
+    setQuickSaving(true);
+    const r=await notionCreate(DB_COURSES,{"Article":nTitle(known?.article||article),"Catégorie":nSel(categorie),"Quantité":nText(""),"Semaine":nText(""),"Recette":nText("")});
+    setQuickSaving(false);
+    if(r?.object==="error"){toast("❌ Ajout impossible : "+(r.message||"erreur"));return;}
+    setQuick("");setSuggestions([]);
+    setCache("courses",null);load(true,true);
+  };
+  // À acheter : groupés par rayon ou par recette. Achetés : à part, en bas, repliés.
+  const toBuy=courses.filter(c=>!c.achete);
+  const bought=courses.filter(c=>c.achete);
+  const groupKey=c=>sortBy==="categorie"?(c.categorie||"Autre"):(c.recette||"Sans recette");
+  const grouped=toBuy.reduce((acc,c)=>{const k=groupKey(c);(acc[k]=acc[k]||[]).push(c);return acc;},{});
+  // ordre des rayons = ordre de CAT_COLORS (parcours du magasin), le reste à la fin
+  const CAT_ORDER=Object.keys(CAT_COLORS);
+  const groupEntries=Object.entries(grouped).sort(([a],[b])=>sortBy!=="categorie"?a.localeCompare(b,"fr"):((CAT_ORDER.indexOf(a)+1||99)-(CAT_ORDER.indexOf(b)+1||99)));
 
   const total=courses.length;const done=courses.filter(c=>c.achete).length;
   const hasDone=done>0;
 
+  // fonction de rendu (pas un composant) : évite de recréer le type à chaque rendu
+  const renderRow=item=>(
+    <div key={item.id} className="course-row" onClick={()=>toggleAchete(item)} role="checkbox" aria-checked={item.achete}
+      style={{display:"flex",alignItems:"center",gap:12,padding:"12px 8px 12px 14px",cursor:"pointer",minHeight:56}}>
+      <span style={{width:24,height:24,borderRadius:999,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:item.achete?"none":"2px solid #D6D3D1",background:item.achete?"#15803D":"transparent",color:"#fff",transition:"all .15s"}}>
+        {item.achete&&<Icon name="check" size={14}/>}
+      </span>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:16,color:item.achete?"#A8A29E":"#1C1917",textDecoration:item.achete?"line-through":"none",lineHeight:1.3}}>{item.article}</div>
+        {sortBy==="categorie"&&item.recette&&<div style={{fontSize:12,color:"#A8A29E",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.recette}</div>}
+      </div>
+      {item.quantite&&<span style={{fontSize:14,color:"#78716C",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{item.quantite}</span>}
+      <button onClick={e=>{e.stopPropagation();setEditItem({...item});setEditCatTouched(false);}} aria-label={`Modifier ${item.article}`} className="icon-btn" style={{color:"#C9C4BE"}}><Icon name="edit" size={16}/></button>
+    </div>
+  );
   return(
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-          {total>0&&<><div style={{background:"#F5F4F2",borderRadius:999,height:6,width:120,overflow:"hidden"}}><div style={{background:"#4ADE80",height:"100%",width:`${(done/total)*100}%`,borderRadius:999,transition:"width 0.3s"}}/></div><span style={{fontSize:12,color:"#78716C"}}>{done}/{total}</span></>}
+      {/* En-tête : reste à acheter + progression */}
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:12,marginBottom:14}}>
+        <div>
+          <div style={{fontSize:28,fontWeight:700,letterSpacing:"-0.03em",color:"#1C1917",lineHeight:1,fontVariantNumeric:"tabular-nums"}}>{toBuy.length}<span style={{fontSize:15,fontWeight:500,color:"#78716C",letterSpacing:0,marginLeft:6}}>à acheter</span></div>
+          {total>0&&<div style={{background:"#ECE9E6",borderRadius:999,height:4,width:160,overflow:"hidden",marginTop:10}}><div style={{background:"#15803D",height:"100%",width:`${(done/total)*100}%`,borderRadius:999,transition:"width 0.3s"}}/></div>}
         </div>
-        <div style={{display:"flex",gap:8}}>
-          <div style={{display:"flex",background:"#F5F4F2",borderRadius:10,overflow:"hidden"}}>
-            <button onClick={()=>setSortBy("categorie")} style={{padding:"7px 12px",background:sortBy==="categorie"?"#C2622D":"transparent",border:"none",color:sortBy==="categorie"?"#fff":"#78716C",cursor:"pointer",fontSize:11,fontWeight:600}}>Par rayon</button>
-            <button onClick={()=>setSortBy("recette")} style={{padding:"7px 12px",background:sortBy==="recette"?"#C2622D":"transparent",border:"none",color:sortBy==="recette"?"#fff":"#78716C",cursor:"pointer",fontSize:11,fontWeight:600}}>Par recette</button>
+        <div style={{display:"flex",gap:4,alignItems:"center"}}>
+          <div role="tablist" style={{display:"flex",background:"#ECE9E6",borderRadius:999,padding:3}}>
+            {[["categorie","Rayon"],["recette","Recette"]].map(([k,l])=>(
+              <button key={k} role="tab" aria-selected={sortBy===k} onClick={()=>setSortBy(k)} style={{padding:"6px 12px",background:sortBy===k?"#FFFFFF":"transparent",boxShadow:sortBy===k?"0 1px 2px rgba(28,25,23,0.12)":"none",border:"none",borderRadius:999,color:sortBy===k?"#1C1917":"#78716C",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"inherit"}}>{l}</button>
+            ))}
           </div>
-          <button onClick={()=>load(true)} style={{padding:"8px 10px",background:"#FFFFFF",border:"1px solid #ECE9E6",borderRadius:10,color:"#78716C",cursor:"pointer"}}><Icon name="refresh" size={14}/></button>
-          {hasDone&&<button onClick={deleteAchetes} style={{padding:"8px 14px",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:10,color:"#DC2626",cursor:"pointer",fontSize:13,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>🗑 Supprimer les cochés ({done})</button>}
-          <button onClick={()=>setShowForm(true)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 14px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:600,fontSize:13,cursor:"pointer"}}><Icon name="plus" size={16}/>Ajouter</button>
+          <button onClick={()=>load(true)} aria-label="Actualiser" className="icon-btn"><Icon name="refresh" size={17}/></button>
         </div>
       </div>
 
+      {/* Saisie rapide */}
+      <div style={{position:"relative",marginBottom:18}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,background:"#FFFFFF",borderRadius:14,boxShadow:"0 0 0 1px rgba(28,25,23,0.08)",padding:"4px 4px 4px 14px"}}>
+          <span style={{color:"#A8A29E",display:"flex"}}><Icon name="plus" size={18}/></span>
+          <input value={quick} onChange={e=>{setQuick(e.target.value);updateSuggestions(e.target.value);}} onKeyDown={e=>{if(e.key==="Enter")quickAdd();if(e.key==="Escape"){setQuick("");setSuggestions([]);}}}
+            placeholder="Ajouter un article…" autoComplete="off" enterKeyHint="done" aria-label="Ajouter un article"
+            style={{flex:1,minWidth:0,border:"none",outline:"none",boxShadow:"none",background:"transparent",fontSize:16,padding:"10px 0",color:"#1C1917",fontFamily:"inherit"}}/>
+          {quick.trim()
+            ?<button onClick={quickAdd} disabled={quickSaving} style={{height:40,padding:"0 16px",background:"#C2622D",border:"none",borderRadius:10,color:"#fff",fontWeight:600,fontSize:14,cursor:"pointer",opacity:quickSaving?0.6:1,fontFamily:"inherit"}}>{quickSaving?"…":"Ajouter"}</button>
+            :<button onClick={()=>setShowForm(true)} aria-label="Ajout détaillé (quantité, recette)" title="Ajout détaillé" className="icon-btn"><Icon name="edit" size={16}/></button>}
+        </div>
+        {quick&&suggestions.length>0&&(
+          <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:20,background:"#FFFFFF",borderRadius:14,marginTop:6,boxShadow:"0 8px 24px rgba(28,25,23,0.12),0 0 0 1px rgba(28,25,23,0.06)",overflow:"hidden"}}>
+            {suggestions.map((sg,k)=>(
+              <button key={k} onClick={()=>{setQuick(sg.article);setSuggestions([]);}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,width:"100%",padding:"12px 14px",background:"none",border:"none",borderTop:k?"1px solid #F5F4F2":"none",cursor:"pointer",textAlign:"left",fontSize:15,color:"#1C1917",fontFamily:"inherit"}}>
+                <span>{sg.article}</span><span style={{fontSize:12,color:"#A8A29E"}}>{sg.categorie}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {loading?<Spinner label="Chargement des courses..."/>:(
-        <div style={{display:"flex",flexDirection:"column",gap:16}}>
-          {Object.keys(grouped).length===0&&<div style={{textAlign:"center",padding:48,color:"#78716C"}}><div style={{fontSize:40,marginBottom:12}}>🛒</div><div style={{fontSize:14}}>Liste vide.</div></div>}
-          {Object.entries(grouped).map(([key,items])=>(
-            <div key={key}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                {sortBy==="categorie"&&<div style={{width:10,height:10,borderRadius:"50%",background:CAT_COLORS[key]||"#6B7280"}}/>}
-                <span style={{fontSize:11,fontWeight:700,color:"#78716C",textTransform:"uppercase",letterSpacing:"0.1em"}}>{key}</span>
-                <span style={{fontSize:11,color:"#78716C"}}>({items.filter(i=>!i.achete).length} restants)</span>
+        <div style={{display:"flex",flexDirection:"column",gap:18}}>
+          {total===0&&<div style={{textAlign:"center",padding:"48px 16px",color:"#78716C"}}><div style={{width:56,height:56,borderRadius:999,background:"#F5F4F2",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",color:"#A8A29E"}}><Icon name="cart" size={24}/></div><div style={{fontSize:15,fontWeight:600,color:"#1C1917"}}>Liste vide</div><div style={{fontSize:13,marginTop:4}}>Ajoute un article ci-dessus, ou génère la liste depuis le Planning.</div></div>}
+          {total>0&&toBuy.length===0&&<div style={{textAlign:"center",padding:"24px 16px",color:"#15803D",fontWeight:600,fontSize:15}}>Tout est dans le caddie ✓</div>}
+          {groupEntries.map(([key,items])=>(
+            <section key={key}>
+              <div style={{display:"flex",alignItems:"center",gap:8,margin:"0 4px 8px"}}>
+                {sortBy==="categorie"&&<span style={{width:8,height:8,borderRadius:999,background:CAT_COLORS[key]||"#A8A29E"}}/>}
+                <span style={{fontSize:14,fontWeight:700,color:"#1C1917"}}>{key}</span>
+                <span style={{fontSize:13,color:"#A8A29E"}}>{items.length}</span>
               </div>
-              {items.map((item,j)=>(
-                <div key={j} onClick={()=>toggleAchete(item)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:"#FFFFFF",border:"1px solid #ECE9E6",borderRadius:10,cursor:"pointer",opacity:item.achete?0.5:1,marginBottom:4,transition:"opacity 0.2s"}}>
-                  <div style={{width:20,height:20,borderRadius:10,border:`2px solid ${item.achete?"#4ADE80":"#44403C"}`,background:item.achete?"#4ADE80":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    {item.achete&&<Icon name="check" size={12}/>}
-                  </div>
-                  <span style={{flex:1,fontSize:14,color:"#1C1917",textDecoration:item.achete?"line-through":"none"}}>{item.article}</span>
-                  <span style={{fontSize:12,color:"#78716C"}}>{item.quantite}</span>
-                  <button onClick={e=>{e.stopPropagation();setEditItem({...item});setEditCatTouched(false);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,opacity:0.5,padding:"0 2px"}}>✏️</button>
-                  {sortBy==="categorie"&&item.recette&&<span style={{fontSize:11,color:"#78716C",background:"#F5F4F2",padding:"2px 6px",borderRadius:10}}>{item.recette}</span>}
-                </div>
-              ))}
-            </div>
+              <div className="card list-card" style={{overflow:"hidden"}}>
+                {items.map(item=>renderRow(item))}
+              </div>
+            </section>
           ))}
+          {bought.length>0&&(
+            <section>
+              <div style={{display:"flex",alignItems:"center",gap:8,margin:"0 4px 8px"}}>
+                <button onClick={()=>setShowBought(v=>!v)} aria-expanded={showBought} style={{display:"flex",alignItems:"center",gap:6,background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit"}}>
+                  <span style={{display:"flex",color:"#A8A29E",transform:showBought?"rotate(90deg)":"none",transition:"transform .15s"}}><Icon name="arrow" size={14}/></span>
+                  <span style={{fontSize:14,fontWeight:700,color:"#78716C"}}>Dans le caddie</span>
+                  <span style={{fontSize:13,color:"#A8A29E"}}>{bought.length}</span>
+                </button>
+                <button onClick={deleteAchetes} style={{marginLeft:"auto",fontSize:13,fontWeight:600,color:"#B91C1C",background:"none",border:"none",cursor:"pointer",padding:"6px 4px",fontFamily:"inherit"}}>Vider</button>
+              </div>
+              {showBought&&<div className="card list-card" style={{overflow:"hidden"}}>{bought.map(item=>renderRow(item))}</div>}
+            </section>
+          )}
         </div>
       )}
 
@@ -3357,6 +3421,8 @@ export default function App(){
         }
         @media(max-width:380px){ .hide-xs{display:none!important;} }
         @media(max-width:440px){ .icon-btn{width:34px;height:34px;} .week-label{font-size:15px!important;} }
+        .list-card>.course-row+.course-row{border-top:1px solid #F0EDEA;}
+        .course-row:active{background:#FAF9F7;}
         .add-slot{display:flex;align-items:center;justify-content:center;gap:6px;min-height:40px;border:1.5px dashed #E2DED9;border-radius:14px;background:transparent;color:#A8A29E;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .15s;}
         .add-slot:hover,.add-slot:active{border-color:#C2622D;color:#C2622D;background:#FBEDE4;}
         button,a,[role=button]{touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
