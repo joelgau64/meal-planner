@@ -6,7 +6,7 @@ import { peekCached, setCache } from "../../lib/cache";
 import { CAT_COLORS, DB_COURSES } from "../../lib/constants";
 import { logError } from "../../lib/errors";
 import { guessCategory } from "../../lib/ingredients";
-import { nCheck, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
+import { nCheck, nSel, nText, nTitle, notionArchive, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { Field, Modal, Spinner, btnDisabled, btnPrimary, inputStyle } from "../../ui/primitives";
 
@@ -100,27 +100,34 @@ export function CoursesTab({toast}){
     }catch(e){logError("cleanupPlan",e);toast("❌ Dictionnaire indisponible : "+e.message);}
     setCleaning(false);
   };
+  // Application : chaque écriture est vérifiée, puis la liste locale est mise à jour
+  // avec ce qui a RÉELLEMENT été écrit. On ne relit pas Notion tout de suite : juste
+  // après une rafale d'écritures, la requête de base peut encore renvoyer l'ancien
+  // état (indexation différée), ce qui ré-affichait la liste d'avant.
   const applyCleanup=async()=>{
     const plan=cleanPlan;setCleanPlan(null);setCleaning(true);
     let fails=0;
-    const ok=r=>{if(!r||r.object==="error")fails++;};
+    const good=r=>{const okk=!!r&&r.object!=="error";if(!okk)fails++;return okk;};
+    const patch={},checked=new Set(),removed=new Set(),created=[];
     for(const op of plan.ops){
       try{
         if(op.type==="update"){
-          ok(await notionUpdate(op.id,{"Article":nTitle(op.fields.article),"Catégorie":nSel(op.fields.categorie),"Quantité":nText(op.fields.quantite),"Recette":nText(op.fields.recette)}));
+          if(good(await notionUpdate(op.id,{"Article":nTitle(op.fields.article),"Catégorie":nSel(op.fields.categorie),"Quantité":nText(op.fields.quantite),"Recette":nText(op.fields.recette)})))
+            patch[op.id]={article:op.fields.article,categorie:op.fields.categorie,quantite:op.fields.quantite,recette:op.fields.recette};
         }else if(op.type==="check"){
-          ok(await notionUpdate(op.id,{"Acheté":nCheck(true)}));
+          if(good(await notionUpdate(op.id,{"Acheté":nCheck(true)})))checked.add(op.id);
         }else if(op.type==="create"){
-          ok(await notionCreate(DB_COURSES,{"Article":nTitle(op.fields.article),"Catégorie":nSel(op.fields.categorie),"Quantité":nText(op.fields.quantite),"Recette":nText(op.fields.recette),"Semaine":nText(op.fields.semaine),"Acheté":nCheck(!!op.gardeManger)}));
+          const r=await notionCreate(DB_COURSES,{"Article":nTitle(op.fields.article),"Catégorie":nSel(op.fields.categorie),"Quantité":nText(op.fields.quantite),"Recette":nText(op.fields.recette),"Semaine":nText(op.fields.semaine),"Acheté":nCheck(!!op.gardeManger)});
+          if(good(r))created.push({id:r.id,...op.fields,achete:!!op.gardeManger});
         }else if(op.type==="archive"){
-          const r=await fetch(`/api/notion?path=/v1/pages/${op.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
-          if(!r.ok)fails++;
+          if(good(await notionArchive(op.id)))removed.add(op.id);
         }
       }catch(e){fails++;logError("cleanupApply",e,{op:op.type});}
     }
+    const next=[...courses.filter(c=>!removed.has(c.id)).map(c=>({...c,...(patch[c.id]||{}),...(checked.has(c.id)?{achete:true}:{})})),...created];
+    setCourses(next);setCache("courses",next);
     setCleaning(false);
-    setCache("courses",null);await load(true,true);
-    toast(fails?`⚠️ Nettoyage terminé avec ${fails} erreur${fails>1?"s":""}`:"Liste nettoyée ✓");
+    toast(fails?`⚠️ Nettoyage partiel : ${fails} écriture${fails>1?"s":""} refusée${fails>1?"s":""} par Notion — relance ✨ pour finir`:"Liste nettoyée ✓");
   };
 
   const addItem=async()=>{

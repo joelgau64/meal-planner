@@ -2,6 +2,19 @@ import { DB_RECETTES, DEFAULT_PORTIONS } from "./constants";
 import { logError } from "./errors";
 
 // ── Notion API ────────────────────────────────────────────────────────────────
+// Notion limite à ~3 requêtes/s et renvoie 429 (rate_limited) ou 409 (conflict) au-delà.
+// Avant : ces réponses étaient traitées comme des échecs définitifs → écritures en rafale
+// (nettoyage de liste, imports) perdues. On réessaie avec un délai croissant.
+const RETRY_STATUS=new Set([409,429,500,502,503,504]);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function notionFetch(path,init,tries=5){
+  for(let i=0;;i++){
+    const res=await fetch(`/api/notion?path=${path}`,init);
+    if(!RETRY_STATUS.has(res.status)||i>=tries-1)return res.json();
+    const ra=Number(res.headers.get("retry-after"));
+    await sleep(ra>0?ra*1000:400*2**i);
+  }
+}
 export async function notionQuery(dbId,filter,sorts){
   const all=[];
   let cursor=undefined;
@@ -11,8 +24,7 @@ export async function notionQuery(dbId,filter,sorts){
       if(filter)body.filter=filter;
       if(sorts)body.sorts=sorts;
       if(cursor)body.start_cursor=cursor;
-      const res=await fetch(`/api/notion?path=/v1/databases/${dbId}/query`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      const data=await res.json();
+      const data=await notionFetch(`/v1/databases/${dbId}/query`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       if(data.object==="error") throw new Error(data.message);
       all.push(...(data.results||[]));
       cursor=data.has_more?data.next_cursor:undefined;
@@ -34,15 +46,18 @@ export async function notionCreate(dbId,properties){
       return {object:"skip",existing:existing.results[0]};
     }
   }
-  const res=await fetch(`/api/notion?path=/v1/pages`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({parent:{database_id:dbId},properties})});
-  const data=await res.json();
+  const data=await notionFetch(`/v1/pages`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({parent:{database_id:dbId},properties})});
   if(data.object==="error") logError("notionCreate",new Error(data.message),{dbId});
   return data;
 }
 export async function notionUpdate(pageId,properties){
-  const res=await fetch(`/api/notion?path=/v1/pages/${pageId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({properties})});
-  const data=await res.json();
+  const data=await notionFetch(`/v1/pages/${pageId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({properties})});
   if(data.object==="error") logError("notionUpdate",new Error(data.message),{pageId,props:Object.keys(properties)});
+  return data;
+}
+export async function notionArchive(pageId){
+  const data=await notionFetch(`/v1/pages/${pageId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
+  if(data.object==="error") logError("notionArchive",new Error(data.message),{pageId});
   return data;
 }
 
