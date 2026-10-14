@@ -7,7 +7,7 @@
 //   - archive : doublon fusionné dans un autre article, ou ligne vide de sens
 //   - check   : article du garde-manger → coché (dans le caddie, réversible)
 // ══════════════════════════════════════════════════════════════════════════════
-import { expandCompound, resolveIngredient } from "./dictionnaire";
+import { expandCompound, resolveIngredient, withQualif } from "./dictionnaire";
 import { canonUnit, combineQuantities, parseOneIngredient } from "./ingredients";
 
 // "200 g" → {qty:200,unit:"g"} ; "1 càs + 2 gousses" → texte brut conservé.
@@ -58,7 +58,9 @@ export function planCleanup(items,index){
   const ops=[];
   for(const g of groups.values()){
     const holder=g.src; // ligne Notion existante qui porte l'article (peut être null)
-    const nom=g.res.nom, quantite=g.q.raw||"";
+    // Taille conservée seulement si toutes les lignes fusionnées la partagent
+    const sameQualif=g.members.every(m=>m.res.qualif===g.res.qualif);
+    const nom=withQualif(g.res.nomBase,sameQualif?g.res.qualif:""), quantite=g.q.raw||"";
     // Article inconnu du dictionnaire : on garde le rayon déjà choisi (ajouts manuels).
     const categorie=g.res.isNew&&(holder?.categorie||g.parent.categorie)?(holder?.categorie||g.parent.categorie):g.res.categorie;
     // Les autres lignes existantes du groupe sont fusionnées → archivées

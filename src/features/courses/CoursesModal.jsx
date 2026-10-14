@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getCached, peekCached, setCache } from "../../lib/cache";
 import { CAT_COLORS, DB_COURSES, DB_INGREDIENTS } from "../../lib/constants";
 import { loadWithCache } from "../../lib/data";
-import { buildIndex, expandCompound, lightKey, resolveIngredient, splitAliases } from "../../lib/dictionnaire";
+import { buildIndex, expandCompound, lightKey, resolveIngredient, splitAliases, withQualif } from "../../lib/dictionnaire";
 import { combineQuantities, parseOneIngredient, splitIngredientLines } from "../../lib/ingredients";
 import { nCheck, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
@@ -60,6 +60,7 @@ export function CoursesModal({onClose,coursesSelection,setCoursesSelection,recet
       if(!m){merged[item.key]={...item,recettes:[item.recette],sources:[item.source]};continue;}
       if(!m.recettes.includes(item.recette))m.recettes.push(item.recette);
       if(!m.sources.includes(item.source))m.sources.push(item.source);
+      if(m.qualif!==item.qualif){m.qualif="";m.nom=withQualif(m.nomBase,"");}
       m.qtyDisplay=combineQuantities(
         {qty:m.qty??null,unit:m.unit||"",raw:m.qtyDisplay||m.raw},
         {qty:item.qty??null,unit:item.unit||"",raw:item.raw}
@@ -113,7 +114,7 @@ export function CoursesModal({onClose,coursesSelection,setCoursesSelection,recet
   // ── Apprentissage du dictionnaire ──────────────────────────────────────────
   const openLearn=(ing)=>{
     setEditKey(ing.key);
-    setForm({nom:ing.nom,categorie:ing.categorie,gardeManger:false,rattacher:""});
+    setForm({nom:ing.nomBase,categorie:ing.categorie,gardeManger:false,rattacher:""});
   };
   const updateDict=(next)=>{setCache("ingredients",next);setDict(next);setEditKey(null);};
   // Alias à mémoriser : les noms bruts rencontrés, sauf ceux déjà couverts par le nom.
@@ -150,7 +151,7 @@ export function CoursesModal({onClose,coursesSelection,setCoursesSelection,recet
         if(res?.object==="error")throw new Error(res.message);
       }
       updateDict(dict.map(e=>e.id===entry.id?{...e,alias}:e));
-      toast(`🔗 « ${ing.nom} » → ${entry.nom}`);
+      toast(`🔗 « ${ing.nomBase} » → ${entry.nom}`);
     }catch(e){toast("❌ Dictionnaire : "+e.message);}
     setSaving(false);
   };

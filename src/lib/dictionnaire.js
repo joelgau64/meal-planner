@@ -27,15 +27,19 @@ const PREP=new Set(("rape rapee emince emincee hache hachee cisele ciselee coupe
   "froid froide facultatif optionnel emiette emiettee presse pressee lave lavee epluche epluchee "+
   "detaille detaillee hachure taille taillee essore essoree reduit reduite").split(" "));
 // Expressions retirées n'importe où (forme normalisée, tokens séparés).
-const PHRASES=["en de","en rondelle","en lamelle","en morceau","en cube","en julienne","en tranche","en poudre",
+const PHRASES=["en de","en rondelle","en lamelle","en morceau","en cube","en julienne","en tranche",
   "en quartier","en brunoise","en fine lamelle","du moulin","au gout","selon gout","a temperature ambiante",
   "pour la cuisson","pour servir","pour la decoration","pour le service","pour la friture","pour le moule",
   "de bonne qualite","de saison","a votre gout","plus ou moins","a peu pre"].map(p=>p.split(" "));
+// Tailles : retirées de la clé mais conservées à l'affichage → "Poireaux (gros)".
+const SIZES=new Set(["gro","grosse","petit","petite","moyen","moyenne","beau","belle","grand","grande","mini","enorme"]);
 const LEADING=new Set(["le","la","les","l'","un","une","du","de","des","d'","quelque","peu"]);
 const TRAILING=new Set(["de","d'","du","des","en","a","au","aux","pour","et","ou","l'","le","la","les"]);
 
 function tokenize(s){
-  const t=String(s||"").replace(/[’`]/g,"'").replace(/\([^)]*\)/g," ").replace(/[;:!?.,/]/g," ")
+  const t=String(s||"").replace(/[’`]/g,"'")
+    .replace(/\(\s*(gros|grosses?|petite?s?|moyen(ne)?s?|grande?s?|belles?|beaux?)\s*\)/gi," $1 ") // "(grosse)" → taille
+    .replace(/\([^)]*\)/g," ").replace(/[;:!?.,/]/g," ")
     .replace(/\b([dlDL])'\s*/g,"$1' ");
   return t.split(/\s+/).filter(Boolean).map(o=>({o,n:singular(deaccent(o.toLowerCase()))}));
 }
@@ -51,8 +55,9 @@ function stripPhrases(toks){
   }
   return out;
 }
-function cleanTokens(toks){
+function cleanTokens(toks,sizes=[]){
   let out=stripPhrases(toks).filter(t=>!PREP.has(t.n));
+  out=out.filter(t=>{if(SIZES.has(t.n)){sizes.push(t.o.toLowerCase());return false;}return true;});
   while(out.length&&LEADING.has(out[0].n))out=out.slice(1);
   while(out.length&&TRAILING.has(out[out.length-1].n))out=out.slice(0,-1);
   return out;
@@ -65,11 +70,14 @@ const displayOf=toks=>{
 
 /** Clé légère : minuscules, sans accents ni parenthèses, singulier. Rien d'autre. */
 export const lightKey=name=>keyOf(tokenize(name));
-/** Nettoyage complet. Renvoie {display, key} ; key vide = rien d'achetable (ex. "émincé"). */
+/** Nettoyage complet. Renvoie {display, key, qualif} ; key vide = rien d'achetable (ex. "émincé"). */
 export function cleanName(name){
-  const toks=cleanTokens(tokenize(name));
-  return{display:displayOf(toks),key:keyOf(toks)};
+  const sizes=[];
+  const toks=cleanTokens(tokenize(name),sizes);
+  return{display:displayOf(toks),key:keyOf(toks),qualif:[...new Set(sizes)].join(", ")};
 }
+/** Nom affiché = nom de base + qualificatif de taille éventuel. */
+export const withQualif=(base,qualif)=>qualif?`${base} (${qualif})`:base;
 
 /**
  * Éclate une ligne d'ingrédient composée en plusieurs lignes.
@@ -115,11 +123,14 @@ export function buildIndex(dict){
  */
 export function resolveIngredient(rawName,index){
   const lk=lightKey(rawName);
-  const {display,key}=cleanName(rawName);
+  const {display,key,qualif}=cleanName(rawName);
   if(!key)return null;
-  const entry=index?.light.get(lk)||index?.light.get(key)||index?.full.get(key)||null;
-  if(entry)return{key:"id:"+entry.id,nom:entry.nom,categorie:entry.categorie||guessCategory(key),gardeManger:!!entry.gardeManger,isNew:false,entry,raw:rawName};
-  return{key:"k:"+key,nom:display,categorie:guessCategory(key),gardeManger:false,isNew:true,entry:null,raw:rawName};
+  // Correspondance exacte (ex. alias "gros sel", "petits pois") : la taille fait partie du nom.
+  const exact=index?.light.get(lk);
+  if(exact)return{key:"id:"+exact.id,nomBase:exact.nom,qualif:"",nom:exact.nom,categorie:exact.categorie||guessCategory(key),gardeManger:!!exact.gardeManger,isNew:false,entry:exact,raw:rawName};
+  const entry=index?.light.get(key)||index?.full.get(key)||null;
+  if(entry)return{key:"id:"+entry.id,nomBase:entry.nom,qualif,nom:withQualif(entry.nom,qualif),categorie:entry.categorie||guessCategory(key),gardeManger:!!entry.gardeManger,isNew:false,entry,raw:rawName};
+  return{key:"k:"+key,nomBase:display,qualif,nom:withQualif(display,qualif),categorie:guessCategory(key),gardeManger:false,isNew:true,entry:null,raw:rawName};
 }
 
 // ── Catégorie par défaut (pour les articles inconnus du dictionnaire) ────────
