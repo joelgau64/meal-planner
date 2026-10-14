@@ -38,6 +38,21 @@ export function unitFamily(canon){
   return null;
 }
 
+// ── Nombres ──────────────────────────────────────────────────────────────────
+const UNI_FRAC={"½":0.5,"¼":0.25,"¾":0.75,"⅓":1/3,"⅔":2/3};
+export function normalizeFractions(s){
+  return String(s||"")
+    .replace(/(\d+)?\s*([½¼¾⅓⅔])/g,(m,d,f)=>String((Number(d)||0)+UNI_FRAC[f]))
+    .replace(/(\d+)\s+(\d+)\/(\d+)/g,(m,a,b,c)=>String(Number(a)+Number(b)/Number(c)));
+}
+/** "1,5" → 1.5 ; "1/2" → 0.5 ; sinon NaN. */
+export function parseNum(str){
+  const x=String(str||"").trim().replace(",",".");
+  const f=x.match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/);
+  if(f)return Number(f[1])/Number(f[2]);
+  return /^\d+(\.\d+)?$|^\.\d+$/.test(x)?Number(x):NaN;
+}
+
 // Parser canonique unique. Retourne {original, qty(number|null), unit(canon), name, scalable}.
 // Gère deux ordres : "200g de quinoa" (quantité d'abord, cas standard) ET
 // "quinoa 100 g" / "aubergine 1 (grosse)" (nom d'abord, cas produit par certaines
@@ -46,6 +61,8 @@ export function parseOneIngredient(line){
   let trimmed=(line||"").replace(/^[-•*]+\s*/,"").replace(/[’`]/g,"'").trim();
   // "Le jus d'un citron" / "zeste de 2 citrons" → on achète des citrons.
   trimmed=trimmed.replace(/^(?:le |la |les |du )?(?:jus|zestes?)\s+(?:d'(un|une)\s+|de\s+|du\s+|d')/i,(m,un)=>un?"1 ":"");
+  // Fractions : "½" → "0.5", "1½" → "1.5", "1 1/2" → "1.5" (avant : "1/2 oignon" était lu 1)
+  trimmed=normalizeFractions(trimmed);
   // "un oignon" → "1 oignon" (sinon la quantité est perdue)
   trimmed=trimmed.replace(/^(un|une)\s+/i,"1 ");
   if(!trimmed)return{original:line,qty:null,unit:"",name:trimmed,scalable:false};
@@ -53,14 +70,14 @@ export function parseOneIngredient(line){
   // Cas 1 : quantité au début de la ligne.
   const m=trimmed.match(new RegExp(`^([\\d.,/]+)\\s*(${UNIT_ALT})?(?=[\\s,]|$)\\s*(?:de |d'|du |des )?(.+)`,"i"));
   if(m){
-    const qty=parseFloat(m[1].replace(",","."));
+    const qty=parseNum(m[1]);
     const name=(m[3]||trimmed).trim().replace(/^(de |d'|du |des )(?=[a-zA-ZÀ-ÿ])/i,"").trim();
     return{original:trimmed,qty:isNaN(qty)?null:qty,unit:canonUnit(m[2]||""),name,scalable:!isNaN(qty)};
   }
   // Cas 2 : quantité à la fin de la ligne, ex. "quinoa 100 g", "aubergine 1 (grosse)".
   const m2=trimmed.match(new RegExp(`^(.+?)\\s+([\\d.,/]+)\\s*(${UNIT_ALT})?\\s*(\\([^)]*\\))?$`,"i"));
   if(m2){
-    const qty=parseFloat(m2[2].replace(",","."));
+    const qty=parseNum(m2[2]);
     if(!isNaN(qty)){
       const name=(m2[1].trim()+(m2[4]?" "+m2[4]:"")).trim();
       return{original:trimmed,qty,unit:canonUnit(m2[3]||""),name,scalable:true};
@@ -114,6 +131,59 @@ export function combineQuantities(a,b){
   const sa=(a.raw||"").trim(), sb=(b.raw||"").trim();
   if(sa&&sb&&sa!==sb)return `${sa} + ${sb}`;
   return sa||sb||"";
+}
+
+// ── Sacs de quantités ────────────────────────────────────────────────────────
+// Remplace la concaténation de textes ("4 + 2 + 1/2 oignon émincé + …") par une
+// somme par unité : les comptages s'additionnent, les unités d'une même famille
+// se convertissent, les unités différentes restent séparées : "4,5 · 7 gousses".
+const PLURAL={"boîte":"boîtes","bouquet":"bouquets","botte":"bottes","sachet":"sachets","pot":"pots","brique":"briques",
+  "barquette":"barquettes","paquet":"paquets","tête":"têtes","brin":"brins","branche":"branches","poignée":"poignées",
+  "feuille":"feuilles","gousse":"gousses","tranche":"tranches","bocal":"bocaux","verre":"verres","pincée":"pincées","tasse":"tasses"};
+const bagKey=unit=>{const fam=unit?unitFamily(unit):null;return fam?UNIT_FAMILIES[fam].base:(unit||"");};
+/** Ajoute une quantité {qty,unit} au sac (objet clé→total). Ignore ce qui n'a pas de nombre. */
+export function addToBag(bag,qty,unit){
+  if(qty==null||isNaN(qty))return bag;
+  const u=canonUnit(unit||"");
+  const fam=u?unitFamily(u):null;
+  const k=bagKey(u);
+  bag[k]=(bag[k]||0)+(fam?qty*UNIT_FAMILIES[fam].units[u]:qty);
+  return bag;
+}
+/** Texte de quantité existant ("2", "200 g", "1 gousse d'ail + 2 gousses", "1/2 oignon émincé") → sac. */
+export function parseQtyText(str,bag={}){
+  for(const part of normalizeFractions(str).split("+")){
+    const m=part.trim().match(/^([\d.,/]+)\s*([^\d\s]+(?:\s*à\s*\S+)?)?/i);
+    if(!m)continue;
+    const q=parseNum(m[1]);if(isNaN(q))continue;
+    // l'unité n'est retenue que si elle est connue ("oignon" n'est pas une unité)
+    const raw=(m[2]||"").replace(/[,;.]$/,"");
+    const cu=canonUnit(raw);
+    const known=cu&&(unitFamily(cu)||Object.prototype.hasOwnProperty.call(PLURAL,cu)||cu==="pièces");
+    addToBag(bag,q,known?cu:"");
+  }
+  return bag;
+}
+const fmtNum=v=>{
+  const r=Math.round(v*100)/100, i=Math.floor(r), d=Math.round((r-i)*100)/100;
+  const fr={0.5:"½",0.25:"¼",0.75:"¾"}[d];
+  if(fr)return (i?String(i):"")+fr;
+  return String(r).replace(".",",");
+};
+export function formatBag(bag){
+  const parts=[];
+  for(const [k,total] of Object.entries(bag||{})){
+    if(!total)continue;
+    let val=total,unit=k;
+    if(k==="g"&&total>=1000){val=total/1000;unit="kg";}
+    else if(k==="ml"){if(total>=1000){val=total/1000;unit="l";}else if(total%10===0){val=total/10;unit="cl";}}
+    else if(k==="càc"&&total%3===0){val=total/3;unit="càs";}
+    if(PLURAL[unit]&&val>1)unit=PLURAL[unit];
+    parts.push({k,txt:unit?`${fmtNum(val)} ${unit}`:fmtNum(val)});
+  }
+  // comptage simple d'abord, puis le reste
+  parts.sort((a,b)=>(a.k===""?0:1)-(b.k===""?0:1));
+  return parts.map(p=>p.txt).join(" · ");
 }
 
 export function parseIngredients(text){

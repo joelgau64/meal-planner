@@ -3,7 +3,7 @@ import { getCached, peekCached, setCache } from "../../lib/cache";
 import { CAT_COLORS, DB_COURSES, DB_INGREDIENTS } from "../../lib/constants";
 import { loadWithCache } from "../../lib/data";
 import { buildIndex, expandCompound, lightKey, resolveIngredient, splitAliases, withQualif } from "../../lib/dictionnaire";
-import { combineQuantities, parseOneIngredient, splitIngredientLines } from "../../lib/ingredients";
+import { addToBag, formatBag, parseOneIngredient, splitIngredientLines } from "../../lib/ingredients";
 import { nCheck, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { Modal, btnDisabled, btnPrimary } from "../../ui/primitives";
@@ -56,20 +56,16 @@ export function CoursesModal({onClose,coursesSelection,setCoursesSelection,recet
     // Agrégation par ingrédient résolu (id du dictionnaire, sinon clé nettoyée).
     const merged={};
     for(const item of list){
-      const m=merged[item.key];
-      if(!m){merged[item.key]={...item,recettes:[item.recette],sources:[item.source]};continue;}
+      let m=merged[item.key];
+      if(!m){m=merged[item.key]={...item,recettes:[],sources:[],bag:{}};}
+      else if(m.qualif!==item.qualif){m.qualif="";m.nom=withQualif(m.nomBase,"");}
       if(!m.recettes.includes(item.recette))m.recettes.push(item.recette);
       if(!m.sources.includes(item.source))m.sources.push(item.source);
-      if(m.qualif!==item.qualif){m.qualif="";m.nom=withQualif(m.nomBase,"");}
-      m.qtyDisplay=combineQuantities(
-        {qty:m.qty??null,unit:m.unit||"",raw:m.qtyDisplay||m.raw},
-        {qty:item.qty??null,unit:item.unit||"",raw:item.raw}
-      );
-      m.qty=null;m.unit="";
+      addToBag(m.bag,item.qty,item.unit);
     }
     return Object.values(merged).map(m=>({
       ...m,
-      qty:m.qtyDisplay||(m.qty!=null?`${m.qty} ${m.unit}`.trim():""),
+      qty:formatBag(m.bag),
       recette:m.recettes.join(", "),
     }));
   };
@@ -257,7 +253,7 @@ export function CoursesModal({onClose,coursesSelection,setCoursesSelection,recet
               </span>
               {ing.isNew&&!dictError&&<button onClick={e=>{e.stopPropagation();editing?setEditKey(null):openLearn(ing);}}
                 style={{...btnSmall,padding:"2px 8px",fontSize:10,borderColor:"var(--accent)",color:"var(--accent)",opacity:1}}>nouveau</button>}
-              {ing.qty&&<span style={{fontSize:12,color:"var(--subtle)",marginRight:4}}>{ing.qty}</span>}
+              {ing.qty&&<span title={ing.qty} style={{fontSize:12,color:"var(--subtle)",marginRight:4,whiteSpace:"nowrap",maxWidth:"38%",overflow:"hidden",textOverflow:"ellipsis",flexShrink:0}}>{ing.qty}</span>}
               {groupMode==="categorie"&&<span style={{fontSize:11,color:"#D6D3D1",fontStyle:"italic"}}>{ing.recette}</span>}
             </div>
             {editing&&(

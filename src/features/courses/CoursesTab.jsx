@@ -174,7 +174,7 @@ export function CoursesTab({toast}){
         <div style={{fontSize:16,color:item.achete?"var(--subtle)":"var(--text)",textDecoration:item.achete?"line-through":"none",lineHeight:1.3}}>{item.article}</div>
         {sortBy==="categorie"&&item.recette&&<div style={{fontSize:12,color:"var(--subtle)",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.recette}</div>}
       </div>
-      {item.quantite&&<span style={{fontSize:14,color:"var(--muted)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>{item.quantite}</span>}
+      {item.quantite&&<span title={item.quantite} style={{fontSize:14,color:"var(--muted)",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums",maxWidth:"38%",overflow:"hidden",textOverflow:"ellipsis",flexShrink:0}}>{item.quantite}</span>}
       <button onClick={e=>{e.stopPropagation();setEditItem({...item});setEditCatTouched(false);}} aria-label={`Modifier ${item.article}`} className="icon-btn" style={{color:"#C9C4BE"}}><Icon name="edit" size={16}/></button>
     </div>
   );

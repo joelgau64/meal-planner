@@ -8,16 +8,8 @@
 //   - check   : article du garde-manger → coché (dans le caddie, réversible)
 // ══════════════════════════════════════════════════════════════════════════════
 import { expandCompound, resolveIngredient, withQualif } from "./dictionnaire";
-import { canonUnit, combineQuantities, parseOneIngredient } from "./ingredients";
+import { addToBag, formatBag, parseOneIngredient, parseQtyText } from "./ingredients";
 
-// "200 g" → {qty:200,unit:"g"} ; "1 càs + 2 gousses" → texte brut conservé.
-function parseQty(str){
-  const s=String(str||"").trim();
-  if(!s)return{qty:null,unit:"",raw:""};
-  const m=s.match(/^([\d.,]+)\s*([^\d\s+]*)$/);
-  if(m){const q=parseFloat(m[1].replace(",","."));if(!isNaN(q))return{qty:q,unit:canonUnit(m[2]||""),raw:s};}
-  return{qty:null,unit:"",raw:s};
-}
 const joinUnique=(...lists)=>[...new Set(lists.flatMap(l=>String(l||"").split(",").map(x=>x.trim())).filter(Boolean))].join(", ");
 
 export function planCleanup(items,index){
@@ -32,9 +24,10 @@ export function planCleanup(items,index){
       const r=resolveIngredient(p.name,index);
       if(!r)continue;
       // Quantité : celle de la ligne si renseignée, sinon celle trouvée dans le nom ("2 courgettes")
-      const q=first&&it.quantite?parseQty(it.quantite)
-        :(p.qty!=null?{qty:p.qty,unit:p.unit,raw:`${p.qty} ${p.unit}`.trim()}:{qty:null,unit:"",raw:""});
-      targets.push({src:first?it:null,parent:it,res:r,q,recette:it.recette||"",semaine:it.semaine||""});
+      // Quantité : celle de la ligne si renseignée (y compris les vieux textes concaténés),
+      // sinon celle trouvée dans le nom ("2 courgettes").
+      const bag=first&&it.quantite?parseQtyText(it.quantite):addToBag({},p.qty,p.unit);
+      targets.push({src:first?it:null,parent:it,res:r,bag,recette:it.recette||"",semaine:it.semaine||""});
       first=false;produced++;
     }
     if(!produced)archives.push({id:it.id,before:it.article,reason:"rien à acheter"});
@@ -44,12 +37,9 @@ export function planCleanup(items,index){
   const groups=new Map();
   for(const t of targets){
     const g=groups.get(t.res.key);
-    if(!g){groups.set(t.res.key,{...t,members:[t]});continue;}
+    if(!g){groups.set(t.res.key,{...t,bag:{...t.bag},members:[t]});continue;}
     g.members.push(t);
-    const display=combineQuantities(
-      {qty:g.q.qty,unit:g.q.unit,raw:g.q.raw},
-      {qty:t.q.qty,unit:t.q.unit,raw:t.q.raw});
-    g.q={qty:null,unit:"",raw:display};
+    for(const [k,v] of Object.entries(t.bag))g.bag[k]=(g.bag[k]||0)+v;
     g.recette=joinUnique(g.recette,t.recette);
     if(!g.src&&t.src)g.src=t.src; // privilégier une ligne existante comme porteuse
   }
@@ -60,7 +50,7 @@ export function planCleanup(items,index){
     const holder=g.src; // ligne Notion existante qui porte l'article (peut être null)
     // Taille conservée seulement si toutes les lignes fusionnées la partagent
     const sameQualif=g.members.every(m=>m.res.qualif===g.res.qualif);
-    const nom=withQualif(g.res.nomBase,sameQualif?g.res.qualif:""), quantite=g.q.raw||"";
+    const nom=withQualif(g.res.nomBase,sameQualif?g.res.qualif:""), quantite=formatBag(g.bag);
     // Article inconnu du dictionnaire : on garde le rayon déjà choisi (ajouts manuels).
     const categorie=g.res.isNew&&(holder?.categorie||g.parent.categorie)?(holder?.categorie||g.parent.categorie):g.res.categorie;
     // Les autres lignes existantes du groupe sont fusionnées → archivées
