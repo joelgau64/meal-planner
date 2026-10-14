@@ -1,4 +1,6 @@
-import { loadWithCache } from "../../lib/data";
+import { fetchAndCache, loadWithCache } from "../../lib/data";
+import { buildIndex } from "../../lib/dictionnaire";
+import { planCleanup } from "../../lib/nettoyage";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { peekCached, setCache } from "../../lib/cache";
 import { CAT_COLORS, DB_COURSES } from "../../lib/constants";
@@ -23,6 +25,8 @@ export function CoursesTab({toast}){
   const [quick,setQuick]=useState(""); // saisie rapide en tête de liste
   const [quickSaving,setQuickSaving]=useState(false);
   const [showBought,setShowBought]=useState(false);
+  const [cleanPlan,setCleanPlan]=useState(null); // aperçu du nettoyage avant application
+  const [cleaning,setCleaning]=useState(false);
 
   // Historique normalisé des articles déjà utilisés (pour normer l'orthographe).
   // On garde la 1re orthographe rencontrée par forme normalisée.
@@ -84,6 +88,39 @@ export function CoursesTab({toast}){
       fetch(`/api/notion?path=/v1/pages/${c.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})})
     ));
     toast(toDelete.length+" article"+(toDelete.length>1?"s":"")+" supprimé"+(toDelete.length>1?"s":"")+" ✓");
+  };
+
+  // ── Nettoyage de la liste via le dictionnaire d'ingrédients ────────────────
+  const prepareCleanup=async()=>{
+    setCleaning(true);
+    try{
+      const dict=await fetchAndCache("ingredients"); // version fraîche
+      const plan=planCleanup(courses.filter(c=>!c.achete),buildIndex(dict));
+      if(!plan.ops.length)toast("Liste déjà propre ✓");else setCleanPlan(plan);
+    }catch(e){logError("cleanupPlan",e);toast("❌ Dictionnaire indisponible : "+e.message);}
+    setCleaning(false);
+  };
+  const applyCleanup=async()=>{
+    const plan=cleanPlan;setCleanPlan(null);setCleaning(true);
+    let fails=0;
+    const ok=r=>{if(!r||r.object==="error")fails++;};
+    for(const op of plan.ops){
+      try{
+        if(op.type==="update"){
+          ok(await notionUpdate(op.id,{"Article":nTitle(op.fields.article),"Catégorie":nSel(op.fields.categorie),"Quantité":nText(op.fields.quantite),"Recette":nText(op.fields.recette)}));
+        }else if(op.type==="check"){
+          ok(await notionUpdate(op.id,{"Acheté":nCheck(true)}));
+        }else if(op.type==="create"){
+          ok(await notionCreate(DB_COURSES,{"Article":nTitle(op.fields.article),"Catégorie":nSel(op.fields.categorie),"Quantité":nText(op.fields.quantite),"Recette":nText(op.fields.recette),"Semaine":nText(op.fields.semaine),"Acheté":nCheck(!!op.gardeManger)}));
+        }else if(op.type==="archive"){
+          const r=await fetch(`/api/notion?path=/v1/pages/${op.id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({archived:true})});
+          if(!r.ok)fails++;
+        }
+      }catch(e){fails++;logError("cleanupApply",e,{op:op.type});}
+    }
+    setCleaning(false);
+    setCache("courses",null);await load(true,true);
+    toast(fails?`⚠️ Nettoyage terminé avec ${fails} erreur${fails>1?"s":""}`:"Liste nettoyée ✓");
   };
 
   const addItem=async()=>{
@@ -148,6 +185,7 @@ export function CoursesTab({toast}){
               <button key={k} role="tab" aria-selected={sortBy===k} onClick={()=>setSortBy(k)} style={{padding:"6px 12px",background:sortBy===k?"#FFFFFF":"transparent",boxShadow:sortBy===k?"0 1px 2px rgba(28,25,23,0.12)":"none",border:"none",borderRadius:999,color:sortBy===k?"var(--text)":"var(--muted)",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"inherit"}}>{l}</button>
             ))}
           </div>
+          <button onClick={prepareCleanup} disabled={cleaning||!toBuy.length} aria-label="Nettoyer la liste" title="Nettoyer la liste (dictionnaire)" className="icon-btn" style={{opacity:cleaning||!toBuy.length?0.4:1}}><Icon name="sparkle" size={17}/></button>
           <button onClick={()=>load(true)} aria-label="Actualiser" className="icon-btn"><Icon name="refresh" size={17}/></button>
         </div>
       </div>
@@ -173,6 +211,28 @@ export function CoursesTab({toast}){
           </div>
         )}
       </div>
+
+      {cleanPlan&&(
+        <Modal title="✨ Nettoyer la liste" onClose={()=>setCleanPlan(null)}>
+          <p style={{fontSize:13,color:"var(--muted)",marginBottom:12,lineHeight:1.5}}>
+            {cleanPlan.summary.update} renommé{cleanPlan.summary.update>1?"s":""} ou corrigé{cleanPlan.summary.update>1?"s":""} · {cleanPlan.summary.create} créé{cleanPlan.summary.create>1?"s":""} par éclatement · {cleanPlan.summary.archive} supprimé{cleanPlan.summary.archive>1?"s":""} (doublons fusionnés) · {cleanPlan.summary.check} du garde-manger mis dans le caddie.
+          </p>
+          <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:16,maxHeight:"50vh",overflow:"auto"}}>
+            {cleanPlan.ops.map((op,i)=>(
+              <div key={i} style={{fontSize:13,display:"flex",gap:8,alignItems:"baseline",padding:"4px 0",borderBottom:"1px solid var(--surface-2)"}}>
+                <span style={{width:18,flexShrink:0}}>{{update:"✏️",create:"➕",archive:"🗑️",check:"🏠"}[op.type]}</span>
+                <span style={{color:"var(--text)"}}>
+                  {op.type==="update"&&<>{op.before!==op.after?<><s style={{color:"var(--subtle)"}}>{op.before}</s> → {op.after}</>:op.after}{op.fields.quantite&&<span style={{color:"var(--muted)"}}> · {op.fields.quantite}</span>}</>}
+                  {op.type==="create"&&<>{op.after} <span style={{color:"var(--muted)"}}>(de « {op.before} »)</span></>}
+                  {op.type==="archive"&&<><s style={{color:"var(--subtle)"}}>{op.before}</s> <span style={{color:"var(--muted)"}}>({op.reason})</span></>}
+                  {op.type==="check"&&<>{op.before} <span style={{color:"var(--muted)"}}>→ caddie</span></>}
+                </span>
+              </div>
+            ))}
+          </div>
+          <button onClick={applyCleanup} style={{...btnPrimary,width:"100%"}}>Appliquer</button>
+        </Modal>
+      )}
 
       {loading?<Spinner label="Chargement des courses…"/>:(
         <div style={{display:"flex",flexDirection:"column",gap:18}}>
