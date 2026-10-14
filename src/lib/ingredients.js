@@ -15,12 +15,20 @@ export const UNIT_FAMILIES={
 // Normalise une unité écrite en sa forme canonique (ou "" si inconnue/comptage).
 export function canonUnit(u){
   if(!u)return"";
-  const x=u.toLowerCase().replace(/\./g,"").replace(/\s/g,"");
+  const x=u.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\./g,"").replace(/\s/g,"");
   const map={g:"g",kg:"kg",mg:"mg",ml:"ml",cl:"cl",dl:"dl",l:"l",
-    cas:"càs","càs":"càs",cac:"càc","càc":"càc","càsoupe":"càs","càcafé":"càc",
-    cuillere:"càs",cuilleres:"càs","cuillère":"càs","cuillères":"càs",
-    tbsp:"càs",tsp:"càc",cup:"tasse",tasse:"tasse",
-    cm:"cm",mm:"mm",oz:"oz",lb:"lb",pincee:"pincée","pincée":"pincée",pincees:"pincée","pincées":"pincée",pieces:"pièces","pièces":"pièces","pièce":"pièces"};
+    cas:"càs",cac:"càc",casoupe:"càs",cacafe:"càc",
+    cuillere:"càs",cuilleres:"càs",
+    tbsp:"càs",tsp:"càc",cup:"tasse",tasse:"tasse",tasses:"tasse",
+    cm:"cm",mm:"mm",oz:"oz",lb:"lb",pincee:"pincée",pincees:"pincée",piece:"pièces",pieces:"pièces",
+    // Contenants / unités de comptage : traités comme unités pour ne plus polluer le nom.
+    boite:"boîte",boites:"boîte",bouquet:"bouquet",bouquets:"bouquet",botte:"botte",bottes:"botte",
+    sachet:"sachet",sachets:"sachet",pot:"pot",pots:"pot",brique:"brique",briques:"brique",
+    barquette:"barquette",barquettes:"barquette",paquet:"paquet",paquets:"paquet",
+    tete:"tête",tetes:"tête",brin:"brin",brins:"brin",branche:"branche",branches:"branche",
+    poignee:"poignée",poignees:"poignée",feuille:"feuille",feuilles:"feuille",
+    gousse:"gousse",gousses:"gousse",tranche:"tranche",tranches:"tranche",
+    bocal:"bocal",bocaux:"bocal",conserve:"boîte",conserves:"boîte",verre:"verre",verres:"verre"};
   return map[x]||u;
 }
 export function unitFamily(canon){
@@ -35,9 +43,13 @@ export function unitFamily(canon){
 // "quinoa 100 g" / "aubergine 1 (grosse)" (nom d'abord, cas produit par certaines
 // extractions IA) — sinon ces lignes ne scalent jamais quand on change les portions.
 export function parseOneIngredient(line){
-  const trimmed=(line||"").replace(/^[-•*]+\s*/,"").trim();
+  let trimmed=(line||"").replace(/^[-•*]+\s*/,"").replace(/[’`]/g,"'").trim();
+  // "Le jus d'un citron" / "zeste de 2 citrons" → on achète des citrons.
+  trimmed=trimmed.replace(/^(?:le |la |les |du )?(?:jus|zestes?)\s+(?:d'(un|une)\s+|de\s+|du\s+|d')/i,(m,un)=>un?"1 ":"");
+  // "un oignon" → "1 oignon" (sinon la quantité est perdue)
+  trimmed=trimmed.replace(/^(un|une)\s+/i,"1 ");
   if(!trimmed)return{original:line,qty:null,unit:"",name:trimmed,scalable:false};
-  const UNIT_ALT="kg|mg|ml|cl|dl|l|cm|mm|c\\.?\\s*à\\.?\\s*s\\.?|c\\.?\\s*à\\.?\\s*c\\.?|c\\.?\\s*à\\.?\\s*(?:soupe|café)|càs|càc|tasse|cuillères?|tbsp|tsp|cup|oz|lb|pincées?|pièces?|feuilles?|gousses?|tranches?|g";
+  const UNIT_ALT="kg|mg|ml|cl|dl|l|cm|mm|c\\.?\\s*à\\.?\\s*s\\.?|c\\.?\\s*à\\.?\\s*c\\.?|c\\.?\\s*à\\.?\\s*(?:soupe|café)|càs|càc|tasse|cuillères?|tbsp|tsp|cup|oz|lb|pincées?|pièces?|feuilles?|gousses?|tranches?|bo[iî]tes?|bouquets?|bottes?|sachets?|pots?|briques?|barquettes?|paquets?|t[eê]tes?|brins?|branches?|poignées?|bocal|bocaux|conserves?|verres?|g";
   // Cas 1 : quantité au début de la ligne.
   const m=trimmed.match(new RegExp(`^([\\d.,/]+)\\s*(${UNIT_ALT})?(?=[\\s,]|$)\\s*(?:de |d'|du |des )?(.+)`,"i"));
   if(m){
@@ -121,12 +133,5 @@ export function scaleIngredients(ingredients,basePortion,newPortion){
   });
 }
 
-export function guessCategory(name){
-  const n=name.toLowerCase();
-  if(/poulet|boeuf|porc|veau|agneau|saumon|thon|cabillaud|crevette|merlu|bar|truite|canard|jambon|bacon|lardons|viande|poisson/.test(n))return"Viandes & Poissons";
-  if(/lait|crème|beurre|fromage|yaourt|parmesan|mozzarella|feta|ricotta|gruyère/.test(n))return"Produits laitiers";
-  if(/tomate|carotte|oignon|ail|courgette|aubergine|poivron|épinard|salade|brocoli|poireau|champignon|pomme de terre|patate|fenouil|céleri|haricot|pois|lentille|quinoa|avocat|concombre|citron|orange/.test(n))return"Fruits & Légumes";
-  if(/eau|vin|bière|jus|bouillon|lait de coco/.test(n))return"Boissons";
-  if(/surgelé|congelé/.test(n))return"Surgelés";
-  return"Épicerie";
-}
+// Catégorie par défaut : implémentation dans le module dictionnaire (frontières de mots).
+export { guessCategory } from "./dictionnaire";

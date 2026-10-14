@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { CookingMode } from "../cooking/CookingMode";
 import { RecipeForm } from "./AddRecipeModal";
-import { setCache } from "../../lib/cache";
+import { peekCached, setCache } from "../../lib/cache";
 import { DB_COURSES, DEFAULT_PORTIONS } from "../../lib/constants";
 import { logError } from "../../lib/errors";
 import { guessCategory, parseIngredients, scaleIngredients } from "../../lib/ingredients";
+import { buildIndex, resolveIngredient } from "../../lib/dictionnaire";
 import { nNum, nSel, nText, nTitle, nUrl, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { DaysSince, Modal, ScoreBadge, btnPrimary } from "../../ui/primitives";
@@ -105,10 +106,13 @@ export function RecipeDetailModal({recette,onClose,toast,onAddToCourses,onAddToP
         </div>
         <button onClick={async()=>{
           const toAdd=selectedIngredients.filter(i=>i.selected);
+          const dictIndex=buildIndex(peekCached("ingredients")||[]);
           const semaine=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
           for(const ing of toAdd){
             const qty=`${ing.displayQty||ing.qty||""} ${ing.unit}`.trim();
-            await notionCreate(DB_COURSES,{"Article":nTitle(ing.name),"Catégorie":nSel(guessCategory(ing.name)),"Quantité":nText(qty),"Semaine":nText(`Sem. du ${semaine}`),"Recette":nText(recette.nom)});
+            // Même normalisation que la génération de liste : nom canonique + catégorie du dictionnaire.
+            const r=resolveIngredient(ing.name,dictIndex);
+            await notionCreate(DB_COURSES,{"Article":nTitle(r?.nom||ing.name),"Catégorie":nSel(r?.categorie||guessCategory(ing.name)),"Quantité":nText(qty),"Semaine":nText(`Sem. du ${semaine}`),"Recette":nText(recette.nom)});
           }
           setCache("courses",null);
           toast(`${toAdd.length} ingrédients ajoutés aux courses ✓`);

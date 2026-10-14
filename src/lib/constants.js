@@ -2,6 +2,7 @@
 export const DB_RECETTES = "39c7b0f8-bf02-4893-bc05-6d82b8c38617";
 export const DB_PLANNING = "dc70bd98-0691-41b9-abfc-5bde68630995";
 export const DB_COURSES = "35f5b3b5-095f-4998-a014-9a112807e711";
+export const DB_INGREDIENTS = "39d12e37-62b0-4116-9c92-d6d3f6473d69";
 export const DB_FRIGO = "3ba7bf2a-8f76-81bd-a878-dbf3ae8be0be";
 export const DAYS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 export const MOMENTS = ["Petit-déjeuner","Déjeuner","Dîner"];

@@ -2,10 +2,10 @@
 // Un seul endroit sait comment charger chaque base. Les appels simultanés pour la
 // même base partagent la même requête (pas de doublon quand un onglet et le
 // préchargement demandent la même chose au même moment).
-import { DB_COURSES, DB_FRIGO, DB_PLANNING, DB_RECETTES } from "./constants";
+import { DB_COURSES, DB_FRIGO, DB_INGREDIENTS, DB_PLANNING, DB_RECETTES } from "./constants";
 import { localISO } from "./dates";
 import { isFresh, peekCached, setCache } from "./cache";
-import { notionQuery, parseCourse, parsePlanning, parseRecette } from "./notion";
+import { notionQuery, parseCourse, parseIngredientEntry, parsePlanning, parseRecette } from "./notion";
 import { joursAvant, parseFrigo } from "./frigo";
 
 // Planning : 8 dernières semaines + futur + file d'attente + repas sans date.
@@ -23,6 +23,7 @@ const LOADERS={
   recettes:async()=>(await notionQuery(DB_RECETTES)).results.map(parseRecette),
   planning:async()=>(await notionQuery(DB_PLANNING,planningWindowFilter())).results.map(parsePlanning),
   courses:async()=>(await notionQuery(DB_COURSES)).results.map(parseCourse),
+  ingredients:async()=>(await notionQuery(DB_INGREDIENTS)).results.map(parseIngredientEntry),
   // Filtre côté Notion : avant, tous les produits déjà consommés étaient téléchargés puis jetés.
   frigo:async()=>{
     const items=(await notionQuery(DB_FRIGO,{property:"Consommé",checkbox:{equals:false}})).results.map(parseFrigo);

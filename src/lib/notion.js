@@ -80,6 +80,11 @@ export function parsePlanning(page){
   const p=page.properties;
   return{id:page.id,repas:getTitle(page),date:getDate(p["Date"]),moment:getSelect(p["Moment"]),recette:getText(p["Recette"]),recette_id:getText(p["Recette ID"]),portions:getNum(p["Portions"])||DEFAULT_PORTIONS,notes:getText(p["Notes"]),fait:getCheck(p["Cuisiné"]),queue:getCheck(p["File d'attente"])};
 }
+// Base « Ingrédients » (dictionnaire de normalisation des courses).
+export function parseIngredientEntry(page){
+  const p=page.properties;
+  return{id:page.id,nom:getTitle(page),alias:getText(p["Alias"]),categorie:getSelect(p["Catégorie"]),gardeManger:getCheck(p["Garde-manger"])};
+}
 export function parseCourse(page){
   const p=page.properties;
   return{id:page.id,article:getTitle(page),categorie:getSelect(p["Catégorie"]),quantite:getText(p["Quantité"]),achete:getCheck(p["Acheté"]),semaine:getText(p["Semaine"]),recette:getText(p["Recette"])};

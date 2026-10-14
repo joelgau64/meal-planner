@@ -2,7 +2,7 @@ import { guard } from './_guard.js';
 
 const NOTION_VERSION = '2022-06-28';
 
-// Liste blanche : le proxy ne relaie QUE ce dont l'app a besoin, sur les 4 bases connues.
+// Liste blanche : le proxy ne relaie QUE ce dont l'app a besoin, sur les 5 bases connues.
 // Avant : n'importe quel chemin / méthode (y compris DELETE) sur tout l'espace Notion partagé
 // avec l'intégration, ouvert à n'importe quel site (CORS *).
 const DBS = new Set([
@@ -10,6 +10,7 @@ const DBS = new Set([
   'dc70bd98-0691-41b9-abfc-5bde68630995', // Planning
   '35f5b3b5-095f-4998-a014-9a112807e711', // Courses
   '3ba7bf2a-8f76-81bd-a878-dbf3ae8be0be', // Frigo
+  '39d12e37-62b0-4116-9c92-d6d3f6473d69', // Ingrédients (dictionnaire)
 ]);
 const norm = id => String(id || '').replace(/-/g, '').toLowerCase();
 const DB_NORM = new Set([...DBS].map(norm));
