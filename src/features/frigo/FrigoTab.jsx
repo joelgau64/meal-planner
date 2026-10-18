@@ -1,12 +1,13 @@
 import { loadWithCache } from "../../lib/data";
 import { fmtJour, joursAvant, lienPlanning, repasLiables } from "../../lib/frigo";
+import { RepasPicker } from "./RepasPicker";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { peekCached, setCache } from "../../lib/cache";
 import { FRIGO_JSON_PROMPT, claudeVision } from "../../lib/claude";
-import { DB_FRIGO } from "../../lib/constants";
+import { DB_FRIGO, DB_PLANNING, DEFAULT_PORTIONS } from "../../lib/constants";
 import { localISO } from "../../lib/dates";
 import { logError } from "../../lib/errors";
-import { nCheck, nDate, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
+import { nCheck, nDate, nNum, nSel, nText, nTitle, notionCreate, notionUpdate, parsePlanning } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { inputStyle } from "../../ui/primitives";
 import { ZoomableImage } from "../../ui/ZoomableImage";
@@ -23,6 +24,7 @@ export function FrigoTab({toast,onCookWith}){
   const [preview,setPreview]=useState(null);
   const [editItem,setEditItem]=useState(null); // item en cours d'édition
   const [planning,setPlanning]=useState(()=>peekCached("planning")||[]);
+  const [recettes,setRecettes]=useState(()=>peekCached("recettes")||[]);
   const camRef=useRef(null);
   const fileRef=useRef(null);
 
@@ -37,14 +39,25 @@ export function FrigoTab({toast,onCookWith}){
   // Planning chargé pour le lien optionnel article ↔ repas (alerte si planifié après péremption).
   useEffect(()=>{loadWithCache("planning",{onCached:setPlanning,onFresh:setPlanning,onError:e=>logError("frigoPlanningLoad",e)});},[]);
   const options=repasLiables(planning,localISO(new Date()));
-  const lienSelect=(value,onChange)=>(
-    <div><label style={{fontSize:13,fontWeight:600,color:"var(--text-2)"}}>Repas prévu <span style={{fontWeight:400,color:"var(--subtle)"}}>(optionnel)</span></label>
-      <select value={value||""} onChange={e=>onChange(e.target.value)} style={{...inputStyle,marginTop:4}}>
-        <option value="">— Aucun —</option>
-        {options.map(p=><option key={p.id} value={p.id}>{(p.recette||p.repas)+(p.queue||!p.date?" · file d'attente":" · "+fmtJour(p.date))}</option>)}
-      </select>
-    </div>
-  );
+  useEffect(()=>{loadWithCache("recettes",{onCached:setRecettes,onFresh:setRecettes,onError:e=>logError("frigoRecettesLoad",e)});},[]);
+  const lienSelect=(article,value,onChange)=><RepasPicker article={article} value={value} onChange={onChange} repas={options} recettes={recettes}/>;
+
+  // Transforme le choix en ID de repas ; une recette pas encore planifiée est ajoutée à la file d'attente.
+  const resoudreLien=async(lien)=>{
+    if(!lien)return"";
+    if(lien.planningId)return lien.planningId;
+    const r=lien.recette;
+    const res=await notionCreate(DB_PLANNING,{
+      "Repas":nTitle(r.nom),"Recette":nText(r.nom),"Recette ID":nText(r.id),
+      "Portions":nNum(r.portions||DEFAULT_PORTIONS),"Moment":nSel("Dîner"),"File d'attente":nCheck(true),
+    });
+    if(!res?.id||res.object==="error")throw new Error("Création du repas en file impossible");
+    const entry=parsePlanning(res);
+    const updated=[...(peekCached("planning")||planning),entry];
+    setPlanning(updated);setCache("planning",updated);
+    toast(`"${r.nom}" ajouté à la file d'attente`);
+    return res.id;
+  };
 
   const handleFile=async(file)=>{
     if(!file||!file.type.startsWith("image/"))return;
@@ -62,10 +75,10 @@ export function FrigoTab({toast,onCookWith}){
           forme:["Filet","Cuisses","Pavé","Steak","Entier","Haché","Tranches","Autre"].includes(r.forme)?r.forme:"Autre",
           peremption:r.date_peremption||"",
           quantite:r.quantite||"",
-          planningId:"",
+          lien:null,
         });
       } else {
-        setDraft({article:"",proteine:"Autre",forme:"Autre",peremption:"",quantite:"",planningId:""});
+        setDraft({article:"",proteine:"Autre",forme:"Autre",peremption:"",quantite:"",lien:null});
         toast("Lecture incomplète — complète à la main");
       }
       setAnalyzing(false);
@@ -77,13 +90,14 @@ export function FrigoTab({toast,onCookWith}){
     if(!draft?.article)return;
     const today=localISO(new Date());
     try{
+      const planningId=await resoudreLien(draft.lien);
       const r=await notionCreate(DB_FRIGO,{
         "Article":nTitle(draft.article),
         "Protéine":nSel(draft.proteine),
         "Forme":nSel(draft.forme),
         ...(draft.peremption?{"Date de péremption":nDate(draft.peremption)}:{}),
         "Quantité":nText(draft.quantite||""),
-        "Planning ID":nText(draft.planningId||""),
+        "Planning ID":nText(planningId),
         "Ajouté le":nDate(today),
         "Consommé":nCheck(false),
       });
@@ -104,13 +118,14 @@ export function FrigoTab({toast,onCookWith}){
   const saveEdit=async()=>{
     if(!editItem?.article)return;
     try{
+      const planningId=await resoudreLien(editItem.lien);
       await notionUpdate(editItem.id,{
         "Article":nTitle(editItem.article),
         "Protéine":nSel(editItem.proteine),
         "Forme":nSel(editItem.forme),
         ...(editItem.peremption?{"Date de péremption":nDate(editItem.peremption)}:{"Date de péremption":nDate(null)}),
         "Quantité":nText(editItem.quantite||""),
-        "Planning ID":nText(editItem.planningId||""),
+        "Planning ID":nText(planningId),
       });
       toast("Modifié ✓");
       setEditItem(null);
@@ -174,7 +189,7 @@ export function FrigoTab({toast,onCookWith}){
                 </div>
               )}
               <div style={{display:"flex",gap:6,marginTop:10,alignItems:"center"}}>
-                <button onClick={()=>setEditItem({...item})} aria-label={`Modifier ${item.article}`} className="icon-btn"><Icon name="edit" size={16}/></button>
+                <button onClick={()=>setEditItem({...item,lien:item.planningId?{planningId:item.planningId}:null})} aria-label={`Modifier ${item.article}`} className="icon-btn"><Icon name="edit" size={16}/></button>
                 <button onClick={()=>onCookWith&&onCookWith(item)} className="soft-btn" style={{flex:1,color:"var(--accent)",background:"var(--accent-soft)"}}><Icon name="chef" size={15}/>Cuisiner avec</button>
                 <button onClick={()=>markConsumed(item)} className="soft-btn" style={{flex:1}}><Icon name="check" size={15}/>Consommé</button>
               </div>
@@ -205,7 +220,7 @@ export function FrigoTab({toast,onCookWith}){
                   <div style={{flex:1}}><label style={{fontSize:13,fontWeight:600,color:"var(--text-2)"}}>Péremption</label><input type="date" value={draft.peremption} onChange={e=>setDraft(d=>({...d,peremption:e.target.value}))} style={{...inputStyle,marginTop:4}}/></div>
                   <div style={{flex:1}}><label style={{fontSize:13,fontWeight:600,color:"var(--text-2)"}}>Quantité</label><input value={draft.quantite} onChange={e=>setDraft(d=>({...d,quantite:e.target.value}))} placeholder="500g" style={{...inputStyle,marginTop:4}}/></div>
                 </div>
-                {lienSelect(draft.planningId,v=>setDraft(d=>({...d,planningId:v})))}
+                {lienSelect(draft.article,draft.lien,v=>setDraft(d=>({...d,lien:v})))}
                 {!draft.peremption&&<p style={{fontSize:12,color:"var(--accent)",margin:0}}>⚠️ Date non lue — saisis-la pour activer le suivi de péremption.</p>}
                 <button onClick={saveDraft} disabled={!draft.article} style={{width:"100%",padding:"12px",background:draft.article?"var(--accent)":"var(--border)",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:draft.article?"pointer":"default",marginTop:4}}>Ajouter au frigo</button>
               </div>
@@ -231,7 +246,7 @@ export function FrigoTab({toast,onCookWith}){
                 <div style={{flex:1}}><label style={{fontSize:13,fontWeight:600,color:"var(--text-2)"}}>Péremption</label><input type="date" value={editItem.peremption||""} onChange={e=>setEditItem(d=>({...d,peremption:e.target.value}))} style={{...inputStyle,marginTop:4}}/></div>
                 <div style={{flex:1}}><label style={{fontSize:13,fontWeight:600,color:"var(--text-2)"}}>Quantité</label><input value={editItem.quantite||""} onChange={e=>setEditItem(d=>({...d,quantite:e.target.value}))} placeholder="500g" style={{...inputStyle,marginTop:4}}/></div>
               </div>
-              {lienSelect(editItem.planningId,v=>setEditItem(d=>({...d,planningId:v})))}
+              {lienSelect(editItem.article,editItem.lien,v=>setEditItem(d=>({...d,lien:v})))}
               <button onClick={saveEdit} disabled={!editItem.article} style={{width:"100%",padding:"12px",background:editItem.article?"var(--accent)":"var(--border)",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:editItem.article?"pointer":"default",marginTop:4}}>Enregistrer</button>
               <button onClick={()=>deleteItem(editItem)} style={{width:"100%",padding:"10px",background:"transparent",border:"1px solid #FECACA",borderRadius:10,color:"var(--danger)",fontSize:13,fontWeight:600,cursor:"pointer"}}>Supprimer du frigo</button>
             </div>

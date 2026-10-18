@@ -47,3 +47,28 @@ export function repasLiables(planning,todayISO){
 }
 
 export const fmtJour=iso=>iso?new Date(iso+"T00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"numeric"}):"";
+
+// ── Suggestion de recette pour un article (déterministe, sans IA) ────────────
+const norm=s=>(s||"").toLowerCase().replace(/œ/g,"oe").replace(/æ/g,"ae").normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+const STOP=new Set(["de","du","des","la","le","les","d","l","a","au","aux","et","en","sans","avec","nature","bio","label","rouge","francais","france","origine","race","superieur","cuit","cuite","frais","fraiche","x","g","kg"]);
+// Morceaux / formes : utiles mais moins discriminants que l'animal (« épaule d'agneau » → c'est « agneau » qui compte).
+const GENERIQUES=new Set(["epaule","filet","filets","cuisse","cuisses","roti","tranche","tranches","steak","steaks","pave","paves","hache","hachee","viande","morceau","morceaux","gigot","cote","cotes","escalope","escalopes","blanc","blancs","dos","emince","emincee","piece","pieces","entier","entiere"]);
+const racine=w=>w.length>4?w.replace(/(s|x)$/,""):w;
+export function motsCles(article){
+  return [...new Set(norm(article).split(/[^a-z0-9]+/).filter(w=>w.length>1&&!STOP.has(w)).map(racine))];
+}
+/** Classe recettes et repas par pertinence pour un article. Renvoie [{score, recette}] trié. */
+export function suggererRecettes(article,recettes,max=3){
+  const mots=motsCles(article);if(!mots.length)return[];
+  return (recettes||[]).map(r=>{
+    const nom=norm(r.nom),ing=norm(r.ingredients);
+    let score=0;
+    for(const m of mots){
+      const poids=GENERIQUES.has(m)?0.5:2;
+      const re=new RegExp(`\\b${m}`);
+      if(re.test(nom))score+=poids*1.5;
+      else if(re.test(ing))score+=poids;
+    }
+    return{score,recette:r};
+  }).filter(x=>x.score>=2).sort((a,b)=>b.score-a.score).slice(0,max);
+}
