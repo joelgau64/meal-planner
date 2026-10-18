@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RecipeDetailModal } from "../recettes/RecipeDetailModal";
 import { getCached } from "../../lib/cache";
+import { suggererRecettes } from "../../lib/frigo";
 import { RECIPE_JSON_PROMPT, extractRecipe, withTimeout } from "../../lib/claude";
 import { DB_RECETTES } from "../../lib/constants";
 import { logError } from "../../lib/errors";
@@ -64,7 +65,6 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   // CASCADE : 1) tes recettes qui matchent la protéine  2) sinon/en complément, Découverte web
   useEffect(()=>{
     if(!frigoCookTarget)return;
-    const article=(frigoCookTarget.article||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     const forme=(frigoCookTarget.forme&&frigoCookTarget.forme!=="Autre")?frigoCookTarget.forme.toLowerCase():"";
     const q=`${forme} ${frigoCookTarget.article}`.trim();
     setPrompt(q);
@@ -72,24 +72,9 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
 
     // 1) Chercher dans TES recettes (cache) : match sur nom + ingrédients
     const mesRecettes=getCached("recettes")||[];
-    const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-    // mots-clés : le nom de l'article + variantes de forme
-    const keyword=article.split(" ")[0]; // ex "poulet", "saumon"
-    const matches=mesRecettes.filter(r=>{
-      const hay=norm(r.nom)+" "+norm(r.ingredients);
-      if(!hay.includes(keyword))return false;
-      // si une forme précise est connue, privilégier les recettes qui la mentionnent,
-      // mais ne pas exclure celles sans forme (le keyword protéine suffit)
-      return true;
-    });
-    // trier : forme mentionnée d'abord, puis jamais cuisinées, puis récence
-    if(forme){
-      matches.sort((a,b)=>{
-        const af=(norm(a.nom)+norm(a.ingredients)).includes(norm(forme))?1:0;
-        const bf=(norm(b.nom)+norm(b.ingredients)).includes(norm(forme))?1:0;
-        return bf-af;
-      });
-    }
+    // Même moteur que les suggestions du Frigo : pluriels, équivalences (Knack → Francfort/hot-dog,
+    // gigot → agneau…), l'animal pèse plus que le morceau ; la forme sert de départage.
+    const matches=suggererRecettes(`${frigoCookTarget.article} ${forme}`,mesRecettes,5).map(x=>x.recette);
     setLocalMatches(matches);
 
     // 2) Lancer AUSSI la recherche web en fallback/complément.

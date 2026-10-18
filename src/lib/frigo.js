@@ -57,18 +57,35 @@ const racine=w=>w.length>4?w.replace(/(s|x)$/,""):w;
 export function motsCles(article){
   return [...new Set(norm(article).split(/[^a-z0-9]+/).filter(w=>w.length>1&&!STOP.has(w)).map(racine))];
 }
-/** Classe recettes et repas par pertinence pour un article. Renvoie [{score, recette}] trié. */
+// Équivalences : un mot de l'article fait aussi chercher ces termes (regex sur texte normalisé).
+// Spécifiques (poids fort) : ce que la recette dit à la place du nom commercial.
+const EQUIVALENTS={
+  knack:["francfort","strasbourg","knacki","hot.?dog"],
+  knacki:["francfort","strasbourg","knack","hot.?dog"],
+  francfort:["strasbourg","knack","hot.?dog"],
+  strasbourg:["francfort","knack","hot.?dog"],
+  gigot:["agneau"],
+  merguez:["agneau","mouton"],
+  bifteck:["boeuf","steak"],
+  tournedo:["boeuf","filet de boeuf"],
+  mincerette:["porc"],
+  allumette:["lardon"],
+  lardon:["allumette","poitrine fumee","pancetta","guanciale"],
+};
+/** Classe les recettes pour un article. Renvoie [{score, recette}] trié. */
 export function suggererRecettes(article,recettes,max=3){
   const mots=motsCles(article);if(!mots.length)return[];
+  const extra=[...new Set(mots.flatMap(m=>EQUIVALENTS[m]||[]))];
   return (recettes||[]).map(r=>{
     const nom=norm(r.nom),ing=norm(r.ingredients);
     let score=0;
-    for(const m of mots){
-      const poids=GENERIQUES.has(m)?0.5:2;
-      const re=new RegExp(`\\b${m}`);
+    const tester=(motif,poids)=>{
+      const re=new RegExp(`\\b${motif}`);
       if(re.test(nom))score+=poids*1.5;
       else if(re.test(ing))score+=poids;
-    }
+    };
+    for(const m of mots)tester(m,GENERIQUES.has(m)?0.5:2);
+    for(const e of extra)tester(e,2);
     return{score,recette:r};
   }).filter(x=>x.score>=2).sort((a,b)=>b.score-a.score).slice(0,max);
 }
