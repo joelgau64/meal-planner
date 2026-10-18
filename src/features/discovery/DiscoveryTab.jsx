@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { RecipeDetailModal } from "../recettes/RecipeDetailModal";
-import { getCached } from "../../lib/cache";
-import { suggererRecettes } from "../../lib/frigo";
+import { peekCached } from "../../lib/cache";
+import { loadWithCache } from "../../lib/data";
+import { localISO } from "../../lib/dates";
+import { lierArticleARecette, delierArticle } from "../../lib/liens";
+import { fmtJour, suggererRecettes } from "../../lib/frigo";
 import { RECIPE_JSON_PROMPT, extractRecipe, withTimeout } from "../../lib/claude";
 import { DB_RECETTES } from "../../lib/constants";
 import { logError } from "../../lib/errors";
@@ -23,6 +26,28 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   const [localMatches,setLocalMatches]=useState([]); // recettes perso correspondant au frigo
   const [frigoContext,setFrigoContext]=useState(null); // {article,forme} d'où vient la recherche
   const [selectedLocal,setSelectedLocal]=useState(null); // recette perso ouverte en détail
+  const [planning,setPlanning]=useState(()=>peekCached("planning")||[]);
+  const [liant,setLiant]=useState(null); // id de la recette en cours de liaison
+  useEffect(()=>{if(frigoCookTarget)loadWithCache("planning",{onCached:setPlanning,onFresh:setPlanning,onError:e=>logError("discoveryPlanningLoad",e)});},[frigoCookTarget]);
+
+  // Lie l'article du frigo d'où vient la recherche à une de ses recettes (comme dans la fiche Frigo).
+  const lier=async r=>{
+    if(!frigoContext?.id)return;
+    setLiant(r.id);
+    try{
+      const {entry,cree}=await lierArticleARecette(frigoContext.id,r,localISO(new Date()));
+      setPlanning(peekCached("planning")||[]);
+      setFrigoContext(c=>({...c,planningId:entry.id}));
+      const apres=entry.date&&!entry.queue&&frigoContext.peremption&&entry.date>frigoContext.peremption;
+      toast(apres?`⚠️ "${r.nom}" lié, mais prévu le ${fmtJour(entry.date)} : ${frigoContext.article} périmé le ${fmtJour(frigoContext.peremption)}`
+        :`🔗 "${r.nom}" lié à ${frigoContext.article}${cree?" · ajouté à la file d'attente":entry.queue||!entry.date?" · déjà en file":" · prévu "+fmtJour(entry.date)}`);
+    }catch(e){logError("discoveryLier",e);toast("❌ Lien impossible : "+e.message);}
+    setLiant(null);
+  };
+  const delier=async()=>{
+    try{await delierArticle(frigoContext.id);setFrigoContext(c=>({...c,planningId:""}));toast("Lien retiré");}
+    catch(e){logError("discoveryDelier",e);toast("❌ "+e.message);}
+  };
   const startX=useRef(null);
   const movedRef=useRef(false);
   const cardRef=useRef(null);
@@ -68,10 +93,10 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
     const forme=(frigoCookTarget.forme&&frigoCookTarget.forme!=="Autre")?frigoCookTarget.forme.toLowerCase():"";
     const q=`${forme} ${frigoCookTarget.article}`.trim();
     setPrompt(q);
-    setFrigoContext({article:frigoCookTarget.article,forme:frigoCookTarget.forme});
+    setFrigoContext({id:frigoCookTarget.id,article:frigoCookTarget.article,forme:frigoCookTarget.forme,peremption:frigoCookTarget.peremption,planningId:frigoCookTarget.planningId||""});
 
     // 1) Chercher dans TES recettes (cache) : match sur nom + ingrédients
-    const mesRecettes=getCached("recettes")||[];
+    const mesRecettes=peekCached("recettes")||[]; // peek : getCached renvoyait null après 2 min → aucune suggestion
     // Même moteur que les suggestions du Frigo : pluriels, équivalences (Knack → Francfort/hot-dog,
     // gigot → agneau…), l'animal pèse plus que le morceau ; la forme sert de départage.
     const matches=suggererRecettes(`${frigoCookTarget.article} ${forme}`,mesRecettes,5).map(x=>x.recette);
@@ -108,6 +133,8 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
           return;
         }
         setImportStatus(s=>({...s,[card.titre]:r.object==="skip"?"skip":"done"}));
+        const page=r.object==="skip"?r.existing:r;
+        if(frigoContext&&page?.id)setLocalMatches(m=>m.some(x=>x.id===page.id)?m:[{id:page.id,nom:recipe.nom,portions:recipe.portions||4,temps:recipe.temps||card.temps,nouvelle:true},...m]);
         toast(r.object==="skip"?"\""+card.titre+"\" déjà dans vos recettes":"\""+card.titre+"\" ajoutée ✓");
       }).catch(e=>{logError("importCardBg",e,{card:card.titre});setImportStatus(s=>({...s,[card.titre]:"error"}));toast("\""+card.titre+"\" — échec de l'enregistrement ✕");});
     };
@@ -232,13 +259,27 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
           </div>
           <p style={{fontSize:12,color:"var(--success)",margin:"0 0 10px"}}>Tu sais déjà faire {localMatches.length===1?"ce plat":"ces plats"} — pas besoin de chercher ailleurs.</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {localMatches.slice(0,6).map(r=>(
-              <button key={r.id} onClick={()=>setSelectedLocal(r)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"12px",background:"var(--bg)",border:"none",borderRadius:12,cursor:"pointer",textAlign:"left",width:"100%",fontFamily:"inherit"}}>
-                <span style={{fontSize:14,fontWeight:600,color:"var(--text)"}}>{r.nom}</span>
-                <span style={{fontSize:11,color:"var(--subtle)",whiteSpace:"nowrap"}}>{r.temps?`${r.temps} min`:""}{!r.derniere_cuisson?" · jamais cuisinée":""}</span>
-              </button>
-            ))}
+            {localMatches.slice(0,6).map(r=>{
+              const lie=planning.find(p=>p.id===frigoContext.planningId);
+              const estLiee=!!lie&&(lie.recette_id===r.id||(lie.recette||lie.repas)===r.nom);
+              return(
+              <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 8px 8px 12px",background:estLiee?"var(--accent-soft)":"var(--bg)",borderRadius:12}}>
+                <button onClick={()=>setSelectedLocal(r)} style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,background:"none",border:"none",cursor:"pointer",textAlign:"left",padding:0,fontFamily:"inherit"}}>
+                  <span style={{fontSize:14,fontWeight:600,color:"var(--text)"}}>{r.nom}{r.nouvelle&&<span style={{fontSize:11,fontWeight:600,color:"var(--success)"}}> · ajoutée</span>}</span>
+                  <span style={{fontSize:11,color:"var(--subtle)"}}>{r.temps?`${r.temps} min`:""}{!r.derniere_cuisson&&!r.nouvelle?(r.temps?" · ":"")+"jamais cuisinée":""}</span>
+                </button>
+                {frigoContext.id&&(estLiee
+                  ?<button onClick={delier} style={{border:"none",borderRadius:999,padding:"7px 12px",fontSize:12,fontWeight:700,background:"var(--accent)",color:"#fff",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✓ Liée</button>
+                  :<button onClick={()=>lier(r)} disabled={!!liant} style={{border:"1px solid var(--accent)",borderRadius:999,padding:"6px 12px",fontSize:12,fontWeight:700,background:"transparent",color:"var(--accent)",cursor:liant?"wait":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",opacity:liant&&liant!==r.id?0.5:1}}>{liant===r.id?"…":"🔗 Lier"}</button>)}
+              </div>);
+            })}
           </div>
+          {(()=>{const lie=planning.find(p=>p.id===frigoContext.planningId);if(!lie)return null;
+            const apres=!lie.queue&&lie.date&&frigoContext.peremption&&lie.date>frigoContext.peremption;
+            return <p style={{fontSize:12,fontWeight:600,margin:"10px 0 0",color:apres?"#DC2626":"var(--text-2)"}}>
+              {apres?"⚠️ ":"🔗 "}{frigoContext.article} → {lie.recette||lie.repas}{lie.queue||!lie.date?" · en file d'attente":" · prévu "+fmtJour(lie.date)}
+              {apres&&<span style={{fontWeight:400}}> — après la péremption ({fmtJour(frigoContext.peremption)})</span>}
+            </p>;})()}
           <p style={{fontSize:11,color:"var(--subtle)",margin:"10px 0 0",textAlign:"center"}}>↓ ou découvre de nouvelles idées ci-dessous</p>
         </div>
       )}

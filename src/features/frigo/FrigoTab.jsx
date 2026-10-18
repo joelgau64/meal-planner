@@ -1,13 +1,14 @@
 import { loadWithCache } from "../../lib/data";
 import { fmtJour, joursAvant, lienPlanning, repasLiables } from "../../lib/frigo";
 import { RepasPicker } from "./RepasPicker";
+import { mettreEnFile } from "../../lib/liens";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { peekCached, setCache } from "../../lib/cache";
 import { FRIGO_JSON_PROMPT, claudeVision } from "../../lib/claude";
-import { DB_FRIGO, DB_PLANNING, DEFAULT_PORTIONS } from "../../lib/constants";
+import { DB_FRIGO } from "../../lib/constants";
 import { localISO } from "../../lib/dates";
 import { logError } from "../../lib/errors";
-import { nCheck, nDate, nNum, nSel, nText, nTitle, notionCreate, notionUpdate, parsePlanning } from "../../lib/notion";
+import { nCheck, nDate, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { inputStyle } from "../../ui/primitives";
 import { ZoomableImage } from "../../ui/ZoomableImage";
@@ -46,17 +47,10 @@ export function FrigoTab({toast,onCookWith}){
   const resoudreLien=async(lien)=>{
     if(!lien)return"";
     if(lien.planningId)return lien.planningId;
-    const r=lien.recette;
-    const res=await notionCreate(DB_PLANNING,{
-      "Repas":nTitle(r.nom),"Recette":nText(r.nom),"Recette ID":nText(r.id),
-      "Portions":nNum(r.portions||DEFAULT_PORTIONS),"Moment":nSel("Dîner"),"File d'attente":nCheck(true),
-    });
-    if(!res?.id||res.object==="error")throw new Error("Création du repas en file impossible");
-    const entry=parsePlanning(res);
-    const updated=[...(peekCached("planning")||planning),entry];
-    setPlanning(updated);setCache("planning",updated);
-    toast(`"${r.nom}" ajouté à la file d'attente`);
-    return res.id;
+    const entry=await mettreEnFile(lien.recette);
+    setPlanning(peekCached("planning"));
+    toast(`"${lien.recette.nom}" ajouté à la file d'attente`);
+    return entry.id;
   };
 
   const handleFile=async(file)=>{
