@@ -1,6 +1,6 @@
 // Choix du repas lié à un article du frigo, en deux blocs :
 //  1. « Au planning et en file » : les repas déjà prévus — les plus pertinents, affichés d'office.
-//     Ceux qui correspondent à l'article (💡) passent devant, puis par date, puis la file.
+//     Correspondances (💡) d'abord, file d'attente avant les repas datés.
 //  2. « Autres recettes » : suggestions parmi les recettes non planifiées + recherche.
 //     Une recette non planifiée est mise en file d'attente à l'enregistrement de l'article.
 import { useState } from "react";
@@ -26,7 +26,11 @@ export function RepasPicker({article,value,onChange,repas,recettes}){
     .map(x=>[x.recette.id,x.score]));
   const prevus=[...repas]
     .filter(p=>!query||n(p.recette||p.repas).includes(query))
-    .sort((a,b)=>(notes.get(b.id)||0)-(notes.get(a.id)||0)); // tri stable : garde l'ordre date → file
+    // Ordre : correspondances en file → correspondances datées → reste de la file → reste daté.
+    .sort((a,b)=>{
+      const rang=p=>(notes.has(p.id)?2:0)+(p.queue||!p.date?1:0);
+      return rang(b)-rang(a)||(notes.get(b.id)||0)-(notes.get(a.id)||0);
+    });
   const visibles=tout||query?prevus:prevus.slice(0,APERCU);
 
   // 2) Autres recettes : suggestions (hors repas déjà prévus) + résultats de recherche.

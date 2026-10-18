@@ -263,7 +263,7 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
             {(()=>{const today=localISO(new Date());
               // Repas déjà au planning / en file d'abord : ce sont les liens les plus pertinents.
               return localMatches.map(r=>({r,prevu:repasPourRecette(r,planning,today)}))
-                .sort((a,b)=>(b.prevu?1:0)-(a.prevu?1:0)).slice(0,toutesLocales?undefined:6);})().map(({r,prevu})=>{
+                .sort((a,b)=>{const rang=x=>!x.prevu?0:x.prevu.queue||!x.prevu.date?2:1;return rang(b)-rang(a);}) /* file d'attente > planifié > reste */.slice(0,toutesLocales?undefined:6);})().map(({r,prevu})=>{
               const lie=planning.find(p=>p.id===frigoContext.planningId);
               const estLiee=!!lie&&(lie.recette_id===r.id||(lie.recette||lie.repas)===r.nom);
               return(
