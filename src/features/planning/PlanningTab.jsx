@@ -27,8 +27,10 @@ export function defaultPlanningDate(){
 // Repas dans la grille du planning. Tap = fiche recette, rond = "cuisiné", flèche = remettre en file.
 // Appui long (400 ms) = glisser vers un autre jour ou vers la file.
 export function MealChip({meal,recette,ctx}){
-  const {dragItem,setDragItem,startTouch,confirmCuisine,confirming,onView,onMoveToQueue,perimesAvant}=ctx;
-  const perimes=meal.fait?[]:perimesAvant(meal.id,meal.date);
+  const {dragItem,setDragItem,startTouch,confirmCuisine,confirming,onView,onMoveToQueue,liesA}=ctx;
+  // Compte à rebours des articles du frigo liés, même si le repas est déjà daté :
+  // la date a pu être choisie avant de connaître la péremption.
+  const lies=meal.fait?[]:liesA(meal.id).filter(f=>f.peremption).sort((a,b)=>a.peremption.localeCompare(b.peremption));
   const accent=MOMENT_COLORS[meal.moment]||"#78716C";
   const busy=confirming===meal.id;
   return(
@@ -42,7 +44,17 @@ export function MealChip({meal,recette,ctx}){
       <div className="meal-body" onClick={()=>onView(meal)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
         <div style={{fontSize:14,fontWeight:600,color:meal.fait?"var(--subtle)":"var(--text)",textDecoration:meal.fait?"line-through":"none",lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{meal.recette||meal.repas}</div>
         {meal.moment&&<div style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"var(--muted)",marginTop:2}}><span style={{width:6,height:6,borderRadius:999,background:accent}}/>{meal.moment}</div>}
-        {perimes.length>0&&<div style={{fontSize:11,fontWeight:600,color:"#DC2626",marginTop:3}}>⚠️ {perimes.map(f=>`${f.article} périmé le ${fmtJour(f.peremption)}`).join(" · ")}</div>}
+        {lies.map(f=>{
+          const j=joursAvant(f.peremption);
+          // marge = jours entre le repas et la péremption (négatif : périmé avant le repas)
+          const marge=meal.date?Math.round((new Date(f.peremption+"T00:00")-new Date(meal.date+"T00:00"))/864e5):null;
+          const trop=marge!==null&&marge<0, juste=marge!==null&&marge<=1&&!trop;
+          const couleur=trop?"#DC2626":juste||j<=2?"#C2622D":"var(--subtle)";
+          return <div key={f.id} style={{fontSize:11,fontWeight:600,color:couleur,marginTop:3}}>
+            {trop?"⚠️":"⏳"} {f.article} : {j<0?"périmé":j===0?"périme aujourd'hui":`périme dans ${j} j`} ({fmtJour(f.peremption)})
+            {trop&&<span style={{fontWeight:400}}> — périmé avant ce repas, avance-le</span>}
+            {juste&&<span style={{fontWeight:400}}> — juste à temps</span>}
+          </div>;})}
       </div>
       {!meal.fait&&<button onClick={e=>{e.stopPropagation();onMoveToQueue(meal);}} onTouchStart={e=>e.stopPropagation()} aria-label="Remettre en file d'attente" title="Remettre en file" className="icon-btn meal-queue"><Icon name="undo" size={16}/></button>}
       <button onClick={e=>{e.stopPropagation();if(!meal.fait&&!busy)confirmCuisine(meal);}} onTouchStart={e=>e.stopPropagation()} disabled={meal.fait||busy} aria-label={meal.fait?"Cuisiné":"Marquer comme cuisiné"} title={meal.fait?"Cuisiné":"Marquer comme cuisiné"}
@@ -361,7 +373,7 @@ export function PlanningTab({toast}){
               const meals=getMeals(date);const today=isToday(date);const past=isPast(date);
               const dropKey=localISO(date);
               const over=dragOver===dropKey;
-              const ctx={dragItem,setDragItem,startTouch,confirmCuisine,confirming,perimesAvant,
+              const ctx={dragItem,setDragItem,startTouch,confirmCuisine,confirming,liesA,
                 onView:meal=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(meal);}},
                 onMoveToQueue:meal=>{
                   const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
