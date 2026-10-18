@@ -3,7 +3,7 @@ import { RecipeDetailModal } from "../recettes/RecipeDetailModal";
 import { peekCached } from "../../lib/cache";
 import { loadWithCache } from "../../lib/data";
 import { localISO } from "../../lib/dates";
-import { lierArticleARecette, delierArticle } from "../../lib/liens";
+import { lierArticleARecette, delierArticle, repasPourRecette } from "../../lib/liens";
 import { fmtJour, suggererRecettes } from "../../lib/frigo";
 import { RECIPE_JSON_PROMPT, extractRecipe, withTimeout } from "../../lib/claude";
 import { DB_RECETTES } from "../../lib/constants";
@@ -259,14 +259,17 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
           </div>
           <p style={{fontSize:12,color:"var(--success)",margin:"0 0 10px"}}>Tu sais déjà faire {localMatches.length===1?"ce plat":"ces plats"} — pas besoin de chercher ailleurs.</p>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {localMatches.slice(0,6).map(r=>{
+            {(()=>{const today=localISO(new Date());
+              // Repas déjà au planning / en file d'abord : ce sont les liens les plus pertinents.
+              return localMatches.map(r=>({r,prevu:repasPourRecette(r,planning,today)}))
+                .sort((a,b)=>(b.prevu?1:0)-(a.prevu?1:0)).slice(0,6);})().map(({r,prevu})=>{
               const lie=planning.find(p=>p.id===frigoContext.planningId);
               const estLiee=!!lie&&(lie.recette_id===r.id||(lie.recette||lie.repas)===r.nom);
               return(
               <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 8px 8px 12px",background:estLiee?"var(--accent-soft)":"var(--bg)",borderRadius:12}}>
                 <button onClick={()=>setSelectedLocal(r)} style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,background:"none",border:"none",cursor:"pointer",textAlign:"left",padding:0,fontFamily:"inherit"}}>
                   <span style={{fontSize:14,fontWeight:600,color:"var(--text)"}}>{r.nom}{r.nouvelle&&<span style={{fontSize:11,fontWeight:600,color:"var(--success)"}}> · ajoutée</span>}</span>
-                  <span style={{fontSize:11,color:"var(--subtle)"}}>{r.temps?`${r.temps} min`:""}{!r.derniere_cuisson&&!r.nouvelle?(r.temps?" · ":"")+"jamais cuisinée":""}</span>
+                  <span style={{fontSize:11,color:"var(--subtle)"}}>{prevu&&<b style={{color:"var(--accent)"}}>{prevu.queue||!prevu.date?"En file":"Prévu "+fmtJour(prevu.date)}{r.temps||(!r.derniere_cuisson&&!r.nouvelle)?" · ":""}</b>}{r.temps?`${r.temps} min`:""}{!r.derniere_cuisson&&!r.nouvelle?(r.temps?" · ":"")+"jamais cuisinée":""}</span>
                 </button>
                 {frigoContext.id&&(estLiee
                   ?<button onClick={delier} style={{border:"none",borderRadius:999,padding:"7px 12px",fontSize:12,fontWeight:700,background:"var(--accent)",color:"#fff",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✓ Liée</button>
