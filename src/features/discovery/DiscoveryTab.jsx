@@ -27,7 +27,8 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
   const [frigoContext,setFrigoContext]=useState(null); // {article,forme} d'où vient la recherche
   const [selectedLocal,setSelectedLocal]=useState(null); // recette perso ouverte en détail
   const [planning,setPlanning]=useState(()=>peekCached("planning")||[]);
-  const [liant,setLiant]=useState(null); // id de la recette en cours de liaison
+  const [liant,setLiant]=useState(null);
+  const [toutesLocales,setToutesLocales]=useState(false); // id de la recette en cours de liaison
   useEffect(()=>{if(frigoCookTarget)loadWithCache("planning",{onCached:setPlanning,onFresh:setPlanning,onError:e=>logError("discoveryPlanningLoad",e)});},[frigoCookTarget]);
 
   // Lie l'article du frigo d'où vient la recherche à une de ses recettes (comme dans la fiche Frigo).
@@ -99,7 +100,7 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
     const mesRecettes=peekCached("recettes")||[]; // peek : getCached renvoyait null après 2 min → aucune suggestion
     // Même moteur que les suggestions du Frigo : pluriels, équivalences (Knack → Francfort/hot-dog,
     // gigot → agneau…), l'animal pèse plus que le morceau ; la forme sert de départage.
-    const matches=suggererRecettes(`${frigoCookTarget.article} ${forme}`,mesRecettes,5).map(x=>x.recette);
+    const matches=suggererRecettes(`${frigoCookTarget.article} ${forme}`,mesRecettes,50).map(x=>x.recette);
     setLocalMatches(matches);
 
     // 2) Lancer AUSSI la recherche web en fallback/complément.
@@ -262,7 +263,7 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
             {(()=>{const today=localISO(new Date());
               // Repas déjà au planning / en file d'abord : ce sont les liens les plus pertinents.
               return localMatches.map(r=>({r,prevu:repasPourRecette(r,planning,today)}))
-                .sort((a,b)=>(b.prevu?1:0)-(a.prevu?1:0)).slice(0,6);})().map(({r,prevu})=>{
+                .sort((a,b)=>(b.prevu?1:0)-(a.prevu?1:0)).slice(0,toutesLocales?undefined:6);})().map(({r,prevu})=>{
               const lie=planning.find(p=>p.id===frigoContext.planningId);
               const estLiee=!!lie&&(lie.recette_id===r.id||(lie.recette||lie.repas)===r.nom);
               return(
@@ -277,6 +278,7 @@ export function DiscoveryTab({toast,frigoCookTarget,clearFrigoTarget}){
               </div>);
             })}
           </div>
+          {localMatches.length>6&&<button onClick={()=>setToutesLocales(t=>!t)} style={{background:"none",border:"none",color:"var(--accent)",fontSize:12,fontWeight:600,cursor:"pointer",padding:"8px 2px 0",fontFamily:"inherit"}}>{toutesLocales?"Réduire":`Voir les ${localMatches.length-6} autres`}</button>}
           {(()=>{const lie=planning.find(p=>p.id===frigoContext.planningId);if(!lie)return null;
             const apres=!lie.queue&&lie.date&&frigoContext.peremption&&lie.date>frigoContext.peremption;
             return <p style={{fontSize:12,fontWeight:600,margin:"10px 0 0",color:apres?"#DC2626":"var(--text-2)"}}>

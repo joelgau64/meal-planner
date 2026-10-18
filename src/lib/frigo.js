@@ -72,20 +72,37 @@ const EQUIVALENTS={
   allumette:["lardon"],
   lardon:["allumette","poitrine fumee","pancetta","guanciale"],
 };
+// Qualificatifs : précisent l'aliment sans le désigner (ne comptent que si l'aliment lui-même est trouvé).
+// Saumon « d'Écosse / de Norvège » = saumon fumé ; « fumé » seul ne doit pas faire remonter les lardons fumés.
+const QUALIFICATIFS={ecosse:["fume"],norvege:["fume"],fume:["fume"]};
+
 /** Classe les recettes pour un article. Renvoie [{score, recette}] trié. */
 export function suggererRecettes(article,recettes,max=3){
   const mots=motsCles(article);if(!mots.length)return[];
-  const extra=[...new Set(mots.flatMap(m=>EQUIVALENTS[m]||[]))];
+  const qualifs=[...new Set(mots.flatMap(m=>QUALIFICATIFS[m]||[]))];
+  const principaux=mots.filter(m=>!QUALIFICATIFS[m]);
   return (recettes||[]).map(r=>{
     const nom=norm(r.nom),ing=norm(r.ingredients);
-    let score=0;
-    const tester=(motif,poids)=>{
+    const lignes=ing.split(/\n|,|<br>/).map(l=>l.trim()).filter(Boolean);
+    // Score d'un terme : nom de recette > ingrédients ; bonus si dans les 3 premières lignes (souvent l'ingrédient principal).
+    const points=(motif,poids)=>{
       const re=new RegExp(`\\b${motif}`);
-      if(re.test(nom))score+=poids*1.5;
-      else if(re.test(ing))score+=poids;
+      const iLigne=lignes.findIndex(l=>re.test(l));
+      let p=re.test(nom)?poids*1.5:iLigne>=0?poids:0;
+      if(iLigne>=0&&iLigne<3)p+=poids*0.25;
+      return p;
     };
-    for(const m of mots)tester(m,GENERIQUES.has(m)?0.5:2);
-    for(const e of extra)tester(e,2);
-    return{score,recette:r};
-  }).filter(x=>x.score>=2).sort((a,b)=>b.score-a.score).slice(0,max);
+    let score=0,aliment=false;
+    for(const m of principaux){
+      // Un mot et ses équivalents comptent une seule fois (lardons + allumettes ne s'additionnent pas).
+      // Le mot lui-même pèse plein pot ; un équivalent un peu moins (pancetta pour « lardons »).
+      // Les équivalents d'un morceau générique désignent l'aliment (gigot → agneau) : ils comptent comme lui.
+      const self=points(m,GENERIQUES.has(m)?0.5:2);
+      const equiv=Math.max(0,...(EQUIVALENTS[m]||[]).map(x=>points(x,1.5)));
+      score+=Math.max(self,equiv);
+      if((self>0&&!GENERIQUES.has(m))||equiv>0)aliment=true;
+    }
+    if(aliment)for(const q of qualifs)score+=points(q,1);
+    return{score:aliment?score:0,recette:r};
+  }).filter(x=>x.score>=1.5).sort((a,b)=>b.score-a.score).slice(0,max);
 }

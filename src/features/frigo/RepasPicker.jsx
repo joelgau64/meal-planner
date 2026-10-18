@@ -14,6 +14,7 @@ const APERCU=6;
 export function RepasPicker({article,value,onChange,repas,recettes}){
   const [q,setQ]=useState("");
   const [tout,setTout]=useState(false);
+  const [toutesAutres,setToutesAutres]=useState(false);
   const query=n(q.trim());
 
   const recetteDe=p=>recettes.find(r=>r.id===p.recette_id)||recettes.find(r=>n(r.nom)===n(p.recette||p.repas));
@@ -32,7 +33,9 @@ export function RepasPicker({article,value,onChange,repas,recettes}){
   const horsPlanning=recettes.filter(r=>!repasDe(r));
   const autres=query
     ?horsPlanning.filter(r=>n(r.nom).includes(query)).slice(0,6).map(r=>({r,sugg:false}))
-    :suggererRecettes(article,horsPlanning,3).map(x=>({r:x.recette,sugg:true}));
+          // Toutes les correspondances (pas de plafond : « saumon » en touche une vingtaine), 4 visibles d'office.
+      :suggererRecettes(article,horsPlanning,50).map(x=>({r:x.recette,sugg:true}));
+  const autresVisibles=query||toutesAutres?autres:autres.slice(0,4);
 
   const selLabel=value?.planningId?(()=>{const p=repas.find(x=>x.id===value.planningId);return p?`${p.recette||p.repas} · ${libDate(p)}`:"Repas lié";})()
     :value?.recette?`${value.recette.nom} · sera ajoutée à la file`:null;
@@ -70,13 +73,18 @@ export function RepasPicker({article,value,onChange,repas,recettes}){
         )}
         {!prevus.length&&<div style={{fontSize:12,color:"var(--subtle)",padding:"2px 4px"}}>{query?"Aucun repas prévu ne correspond":"Rien au planning ni en file"}</div>}
 
-        {autres.length>0&&<div style={titre}>{query?"Autres recettes":"Autres recettes suggérées"}</div>}
-        {autres.map(({r,sugg:s})=>(
+        {autres.length>0&&<div style={titre}>{query?"Autres recettes":`Autres recettes suggérées (${autres.length})`}</div>}
+        {autresVisibles.map(({r,sugg:s})=>(
           <button key={r.id} type="button" onClick={()=>{onChange({recette:r});setQ("");}} style={{...ligne,...(s?sugg:{})}}>
             <span style={{flex:1,minWidth:0}}>{s?"💡 ":""}{r.nom}</span>
             <span style={{fontSize:11,fontWeight:400,whiteSpace:"nowrap",opacity:0.8}}>→ file d'attente</span>
           </button>
         ))}
+        {!query&&autres.length>4&&(
+          <button type="button" onClick={()=>setToutesAutres(t=>!t)} style={{background:"none",border:"none",color:"var(--accent)",fontSize:12,fontWeight:600,cursor:"pointer",padding:"2px",textAlign:"left",fontFamily:"inherit"}}>
+            {toutesAutres?"Réduire":`Voir les ${autres.length-4} autres suggestions`}
+          </button>
+        )}
         {query&&!prevus.length&&!autres.length&&<div style={{fontSize:12,color:"var(--subtle)",padding:"2px 4px"}}>Aucune recette trouvée</div>}
       </div>
     </div>
