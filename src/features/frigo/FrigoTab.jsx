@@ -9,6 +9,7 @@ import { logError } from "../../lib/errors";
 import { nCheck, nDate, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
 import { inputStyle } from "../../ui/primitives";
+import { ZoomableImage } from "../../ui/ZoomableImage";
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
@@ -20,7 +21,6 @@ export function FrigoTab({toast,onCookWith}){
   const [analyzing,setAnalyzing]=useState(false);
   const [draft,setDraft]=useState(null); // recette extraite en attente de confirmation
   const [preview,setPreview]=useState(null);
-  const [zoomed,setZoomed]=useState(false);
   const [editItem,setEditItem]=useState(null); // item en cours d'édition
   const camRef=useRef(null);
   const fileRef=useRef(null);
@@ -161,12 +161,13 @@ export function FrigoTab({toast,onCookWith}){
 
       {showCapture&&(
         <div style={{position:"fixed",inset:0,zIndex:2500,background:"rgba(28,25,23,0.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div className="modal-inner" style={{background:"var(--surface)",borderRadius:"24px 24px 0 0",maxWidth:520,width:"100%",maxHeight:"90vh",overflow:"auto",padding:20}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div className="modal-inner" style={{background:"var(--surface)",borderRadius:"24px 24px 0 0",maxWidth:520,width:"100%",maxHeight:"92dvh",overflow:"hidden",display:"flex",flexDirection:"column",padding:"20px 20px 0"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexShrink:0}}>
               <h3 style={{margin:0,fontSize:17,fontWeight:700,letterSpacing:"-0.02em"}}>Nouveau produit</h3>
               <button onClick={()=>{setShowCapture(false);setDraft(null);setPreview(null);}} aria-label="Fermer" className="icon-btn"><Icon name="close" size={18}/></button>
             </div>
-            {preview&&<div style={{position:"relative",marginBottom:12}}><img src={preview} alt="" onClick={()=>setZoomed(true)} style={{width:"100%",height:140,objectFit:"cover",borderRadius:14,cursor:"zoom-in",display:"block"}}/><span onClick={()=>setZoomed(true)} style={{position:"absolute",bottom:8,right:8,background:"rgba(28,25,23,0.75)",color:"#fff",fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:999,cursor:"zoom-in"}}>Agrandir</span></div>}
+            {preview&&<div style={{flexShrink:0,marginBottom:12}}><ZoomableImage src={preview} alt="Photo du produit"/></div>}
+            <div style={{flex:1,minHeight:0,overflowY:"auto",paddingBottom:"calc(20px + env(safe-area-inset-bottom))"}}>
             {analyzing?(
               <div style={{textAlign:"center",padding:"20px",color:"var(--muted)",fontSize:14}}>Lecture de l'étiquette…</div>
             ):draft?(
@@ -184,14 +185,8 @@ export function FrigoTab({toast,onCookWith}){
                 <button onClick={saveDraft} disabled={!draft.article} style={{width:"100%",padding:"12px",background:draft.article?"var(--accent)":"var(--border)",border:"none",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,cursor:draft.article?"pointer":"default",marginTop:4}}>Ajouter au frigo</button>
               </div>
             ):null}
-          </div>
-          {zoomed&&preview&&(
-            <div onClick={()=>setZoomed(false)} style={{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",padding:12}}>
-              <img src={preview} alt="" style={{maxWidth:"100%",maxHeight:"100%",objectFit:"contain",borderRadius:10}}/>
-              <button onClick={e=>{e.stopPropagation();setZoomed(false);}} style={{position:"absolute",top:"calc(12px + env(safe-area-inset-top))",right:16,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",fontSize:22,width:40,height:40,borderRadius:999,cursor:"pointer"}}>✕</button>
-              <span style={{position:"absolute",bottom:"calc(16px + env(safe-area-inset-bottom))",left:0,right:0,textAlign:"center",color:"rgba(255,255,255,0.7)",fontSize:12}}>Pince pour zoomer · touche pour fermer</span>
             </div>
-          )}
+          </div>
         </div>
       )}
       {editItem&&(
