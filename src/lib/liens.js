@@ -2,8 +2,9 @@
 // Le lien pointe vers une ENTRÉE du planning (file d'attente ou date) : c'est elle qui porte la date
 // comparée à la péremption. Une recette pas encore planifiée est donc d'abord mise en file d'attente.
 import { peekCached, setCache } from "./cache";
-import { DB_PLANNING, DEFAULT_PORTIONS } from "./constants";
-import { nCheck, nNum, nSel, nText, nTitle, notionCreate, notionUpdate, parsePlanning } from "./notion";
+import { DB_FRIGO, DB_PLANNING, DEFAULT_PORTIONS } from "./constants";
+import { parseFrigo } from "./frigo";
+import { nCheck, nNum, nSel, nText, nTitle, notionCreate, notionQuery, notionUpdate, parsePlanning } from "./notion";
 
 const n=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
 
@@ -42,3 +43,28 @@ export async function delierArticle(itemId){
   if(frigo)setCache("frigo",frigo.map(f=>f.id===itemId?{...f,planningId:""}:f));
 }
 
+
+/**
+ * Repas cuisiné → les articles du frigo qui lui sont liés sont marqués « Consommé » (ils sortent du frigo).
+ * Interroge Notion directement (le cache frigo peut être absent ou périmé). Renvoie les articles retirés.
+ * Ne lève jamais : un échec ici ne doit pas bloquer le « cuisiné ».
+ */
+export async function consommerArticlesLies(planningId){
+  if(!planningId)return[];
+  try{
+    const res=await notionQuery(DB_FRIGO,{and:[
+      {property:"Planning ID",rich_text:{equals:planningId}},
+      {property:"Consommé",checkbox:{equals:false}},
+    ]});
+    const lies=(res.results||[]).map(parseFrigo);
+    for(const it of lies)await notionUpdate(it.id,{"Consommé":nCheck(true)});
+    const ids=new Set(lies.map(i=>i.id));
+    const frigo=peekCached("frigo");
+    if(frigo&&ids.size)setCache("frigo",frigo.filter(f=>!ids.has(f.id)));
+    return lies;
+  }catch(e){
+    console.error("consommerArticlesLies",e);
+    return[];
+  }
+}
+export const libRetires=lies=>lies.length?`🧊 ${lies.map(l=>l.article).join(", ")} retiré${lies.length>1?"s":""} du frigo`:"";

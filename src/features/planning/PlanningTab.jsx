@@ -4,6 +4,7 @@ import { CoursesModal } from "../courses/CoursesModal";
 import { AddToPlanningModal } from "./AddToPlanningModal";
 import { WeekPlannerWizard } from "./WeekPlannerWizard";
 import { isCoarsePointer, useTouchDrag } from "./useTouchDrag";
+import { consommerArticlesLies, libRetires } from "../../lib/liens";
 import { RecipeDetailModal } from "../recettes/RecipeDetailModal";
 import { peekCached, setCache } from "../../lib/cache";
 import { DAYS, DB_PLANNING, DEFAULT_PORTIONS, MOMENTS, MOMENT_COLORS } from "../../lib/constants";
@@ -139,6 +140,8 @@ export function PlanningTab({toast}){
         }
         const updated=planning.map(p=>p.id===meal.id?{...p,fait:true}:p);
         setPlanning(updated);setCache("planning",updated);
+        const retires=await consommerArticlesLies(meal.id);
+        if(retires.length){setFrigo(f=>f.filter(x=>!retires.some(r=>r.id===x.id)));toast(libRetires(retires));}
       } else if(action==="requeue"){
         // Remettre en file d'attente sans date
         await notionUpdate(meal.id,{"File d'attente":nCheck(true),"Date":nDate(null)});
@@ -234,7 +237,10 @@ export function PlanningTab({toast}){
         "Dernière cuisson":nDate(localISO(new Date())),
       });
     }
-    toast(`"${meal.recette}" cuisiné ✓`);setConfirming(null);
+    // Les articles du frigo liés à ce repas sont consommés : on les retire du frigo.
+    const retires=await consommerArticlesLies(meal.id);
+    if(retires.length)setFrigo(f=>f.filter(x=>!retires.some(r=>r.id===x.id)));
+    toast(`"${meal.recette}" cuisiné ✓`+(retires.length?" · "+libRetires(retires):""));setConfirming(null);
   };
 
   // Annule une entrée de planning (archivage définitif)

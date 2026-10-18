@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getCached, setCache } from "../../lib/cache";
+import { peekCached, setCache } from "../../lib/cache";
+import { consommerArticlesLies, libRetires } from "../../lib/liens";
 import { localISO } from "../../lib/dates";
 import { logError } from "../../lib/errors";
 import { splitIngredientLines } from "../../lib/ingredients";
@@ -116,7 +117,7 @@ export function CookingMode({recette,scaled,portions,onClose,planningEntry,onCoo
 
   // Cherche dans le frigo (cache) les protéines mentionnées par la recette.
   const findFridgeMatches=()=>{
-    const frigo=getCached("frigo")||[];
+    const frigo=(peekCached("frigo")||[]).filter(i=>!i.consomme&&i.planningId!==planningEntry?.id);
     const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
     const hay=norm(recette.nom)+" "+norm(recette.ingredients);
     return frigo.filter(item=>{
@@ -142,7 +143,9 @@ export function CookingMode({recette,scaled,portions,onClose,planningEntry,onCoo
         const r2=await notionUpdate(recette.id,{"Fois cuisinée":nNum((recette.fois_cuisinee||0)+1),"Dernière cuisson":nDate(localISO(new Date()))});
         if(r2?.object==="error") throw new Error(r2.message||"Échec Fois cuisinée");
       }
-      toast&&toast("✓ Marqué cuisiné");
+      // Articles liés à ce repas : retirés d'office ; les autres correspondances restent proposées.
+      const retires=await consommerArticlesLies(planningEntry.id);
+      toast&&toast("✓ Marqué cuisiné"+(retires.length?" · "+libRetires(retires):""));
     }catch(e){logError("cookComplete",e,{recette:recette.nom});toast&&toast("Erreur : "+e.message);setCompleting(false);return;}
     // Proposer de retirer les protéines du frigo concernées
     const matches=findFridgeMatches();
@@ -152,7 +155,7 @@ export function CookingMode({recette,scaled,portions,onClose,planningEntry,onCoo
 
   const confirmFridgeRemoval=async(remove)=>{
     if(remove&&fridgeConfirm){
-      const frigo=getCached("frigo")||[];
+      const frigo=peekCached("frigo")||[];
       const ids=new Set(fridgeConfirm.map(m=>m.id));
       setCache("frigo",frigo.filter(f=>!ids.has(f.id)));
       for(const item of fridgeConfirm){
