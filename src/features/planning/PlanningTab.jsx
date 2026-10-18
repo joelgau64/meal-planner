@@ -1,12 +1,14 @@
 import { loadWithCache } from "../../lib/data";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CoursesModal } from "../courses/CoursesModal";
 import { AddToPlanningModal } from "./AddToPlanningModal";
 import { WeekPlannerWizard } from "./WeekPlannerWizard";
+import { isCoarsePointer, useTouchDrag } from "./useTouchDrag";
 import { RecipeDetailModal } from "../recettes/RecipeDetailModal";
 import { peekCached, setCache } from "../../lib/cache";
 import { DAYS, DB_PLANNING, DEFAULT_PORTIONS, MOMENTS, MOMENT_COLORS } from "../../lib/constants";
 import { localISO } from "../../lib/dates";
+import { fmtJour, joursAvant } from "../../lib/frigo";
 import { logError } from "../../lib/errors";
 import { nCheck, nDate, nNum, nSel, nText, nTitle, notionCreate, notionUpdate } from "../../lib/notion";
 import { Icon } from "../../ui/Icon";
@@ -24,74 +26,22 @@ export function defaultPlanningDate(){
 // Repas dans la grille du planning. Tap = fiche recette, rond = "cuisiné", flèche = remettre en file.
 // Appui long (400 ms) = glisser vers un autre jour ou vers la file.
 export function MealChip({meal,recette,ctx}){
-  const {planning,setPlanning,dragItem,setDragItem,setDragOver,handleDrop,touchDragRef,confirmCuisine,confirming,toast,onView,onMoveToQueue}=ctx;
-  const longPressTimer=useRef(null);
-  const isDragging=useRef(false);
-  const touchStartPos=useRef(null);
-  const handleTouchStart=e=>{
-    isDragging.current=false;
-    const touch=e.touches[0];
-    touchStartPos.current={x:touch.clientX,y:touch.clientY};
-    const node=e.currentTarget;
-    longPressTimer.current=setTimeout(()=>{
-      isDragging.current=true;
-      navigator.vibrate?.(15);
-      const ghost=node.cloneNode(true);
-      ghost.style.cssText=`position:fixed;top:${touch.clientY-28}px;left:${touch.clientX-120}px;width:240px;opacity:0.92;z-index:9999;pointer-events:none;border-radius:14px;background:#fff;box-shadow:0 12px 32px rgba(28,25,23,0.18);`;
-      document.body.appendChild(ghost);
-      touchDragRef.current={item:meal,ghost};
-      setDragItem(meal);
-    },400);
-  };
-  const handleTouchMove=e=>{
-    const touch=e.touches[0];
-    if(!isDragging.current){
-      if(touchStartPos.current){
-        const dx=Math.abs(touch.clientX-touchStartPos.current.x),dy=Math.abs(touch.clientY-touchStartPos.current.y);
-        if(dx>8||dy>8)clearTimeout(longPressTimer.current);
-      }
-      return;
-    }
-    if(!touchDragRef.current)return;
-    e.preventDefault();
-    touchDragRef.current.ghost.style.top=touch.clientY-28+"px";
-    touchDragRef.current.ghost.style.left=touch.clientX-120+"px";
-    const zone=document.elementFromPoint(touch.clientX,touch.clientY)?.closest("[data-dropzone]");
-    setDragOver(zone?.dataset.dropzone||null);
-  };
-  const handleTouchEnd=e=>{
-    clearTimeout(longPressTimer.current);
-    if(!isDragging.current||!touchDragRef.current){setDragItem(null);return;}
-    const item=touchDragRef.current.item;
-    const touch=e.changedTouches[0];
-    const zone=document.elementFromPoint(touch.clientX,touch.clientY)?.closest("[data-dropzone]");
-    if(zone){
-      const key=zone.dataset.dropzone;
-      if(key==="queue"){
-        const updated=planning.map(p=>p.id===item.id?{...p,queue:true}:p);
-        setPlanning(updated);setCache("planning",updated);
-        notionUpdate(item.id,{"File d'attente":nCheck(true)});
-        toast(`"${item.recette||item.repas}" remis en file d'attente ✓`);
-      }else handleDrop(key,undefined,item);
-    }
-    try{touchDragRef.current.ghost.remove();}catch{/* déjà retiré */}
-    touchDragRef.current=null;
-    setDragItem(null);setDragOver(null);
-    isDragging.current=false;
-  };
+  const {dragItem,setDragItem,startTouch,confirmCuisine,confirming,onView,onMoveToQueue,perimesAvant}=ctx;
+  const perimes=meal.fait?[]:perimesAvant(meal.id,meal.date);
   const accent=MOMENT_COLORS[meal.moment]||"#78716C";
   const busy=confirming===meal.id;
   return(
-    <div draggable onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
-      onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}
+    <div draggable={!isCoarsePointer()} onDragStart={()=>setDragItem(meal)} onDragEnd={()=>setDragItem(null)}
+      onTouchStart={e=>startTouch(e,meal)} onContextMenu={e=>e.preventDefault()}
       className="meal-chip"
-      style={{display:"flex",alignItems:"center",gap:10,padding:6,background:"var(--surface)",borderRadius:14,boxShadow:"0 0 0 1px rgba(28,25,23,0.06)",opacity:dragItem?.id===meal.id?0.35:1,cursor:"grab",WebkitUserSelect:"none",userSelect:"none"}}>
+      style={{display:"flex",alignItems:"center",gap:10,padding:6,background:"var(--surface)",borderRadius:14,boxShadow:"0 0 0 1px rgba(28,25,23,0.06)",opacity:dragItem?.id===meal.id?0.35:1,cursor:"grab",WebkitUserSelect:"none",userSelect:"none",WebkitTouchCallout:"none"}}>
       <div className="meal-thumb" onClick={()=>onView(meal)} style={{width:44,height:44,borderRadius:10,overflow:"hidden",flexShrink:0,opacity:meal.fait?0.55:1}}>
         <RecipeThumb recette={recette||{nom:meal.recette||meal.repas}} height={44}/>
       </div>
       <div className="meal-body" onClick={()=>onView(meal)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
         <div style={{fontSize:14,fontWeight:600,color:meal.fait?"var(--subtle)":"var(--text)",textDecoration:meal.fait?"line-through":"none",lineHeight:1.25,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{meal.recette||meal.repas}</div>
         {meal.moment&&<div style={{display:"flex",alignItems:"center",gap:5,fontSize:12,color:"var(--muted)",marginTop:2}}><span style={{width:6,height:6,borderRadius:999,background:accent}}/>{meal.moment}</div>}
+        {perimes.length>0&&<div style={{fontSize:11,fontWeight:600,color:"#DC2626",marginTop:3}}>⚠️ {perimes.map(f=>`${f.article} périmé le ${fmtJour(f.peremption)}`).join(" · ")}</div>}
       </div>
       {!meal.fait&&<button onClick={e=>{e.stopPropagation();onMoveToQueue(meal);}} onTouchStart={e=>e.stopPropagation()} aria-label="Remettre en file d'attente" title="Remettre en file" className="icon-btn meal-queue"><Icon name="undo" size={16}/></button>}
       <button onClick={e=>{e.stopPropagation();if(!meal.fait&&!busy)confirmCuisine(meal);}} onTouchStart={e=>e.stopPropagation()} disabled={meal.fait||busy} aria-label={meal.fait?"Cuisiné":"Marquer comme cuisiné"} title={meal.fait?"Cuisiné":"Marquer comme cuisiné"}
@@ -110,24 +60,18 @@ export function PlanningTab({toast}){
   const [weekOffset,setWeekOffset]=useState(0);
   const [dragItem,setDragItem]=useState(null);
   const [dragOver,setDragOver]=useState(null);
-  const touchDragRef=useRef(null); // {item, ghost, startX, startY}
-
-  // Cleanup global si touch annulé ou changement de page
-  useEffect(()=>{
-    const cleanup=()=>{
-      if(touchDragRef.current?.ghost){
-        try{touchDragRef.current.ghost.remove();}catch(e){}
-        touchDragRef.current=null;
-      }
-      setDragItem(null);setDragOver(null);
-    };
-    window.addEventListener("touchcancel",cleanup);
-    return()=>{
-      window.removeEventListener("touchcancel",cleanup);
-      cleanup(); // nettoyage au unmount du composant
-    };
-  },[]);
   const [confirming,setConfirming]=useState(null);
+  // Articles du frigo liés à un repas (optionnel, saisi dans l'onglet Frigo).
+  const [frigo,setFrigo]=useState(()=>peekCached("frigo")||[]);
+  useEffect(()=>{loadWithCache("frigo",{onCached:setFrigo,onFresh:setFrigo,onError:e=>logError("planningFrigoLoad",e)});},[]);
+  const liesA=id=>frigo.filter(f=>f.planningId===id&&!f.consomme);
+  // Articles liés qui seront périmés à la date du repas.
+  const perimesAvant=(id,date)=>date?liesA(id).filter(f=>f.peremption&&date>f.peremption):[];
+  const alerteSiPerime=(id,date,nom)=>{
+    const p=perimesAvant(id,date);
+    if(p.length)toast(`⚠️ "${nom}" prévu le ${fmtJour(date)} : ${p.map(f=>f.article+" périmé le "+fmtJour(f.peremption)).join(", ")}`);
+    return p.length>0;
+  };
   const [form,setForm]=useState({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
   const [suggestions,setSuggestions]=useState([]);
   const [saving,setSaving]=useState(false);
@@ -245,6 +189,24 @@ export function PlanningTab({toast}){
 
   const save=async()=>{
     setSaving(true);
+    const norm=x=>(x||"").trim().toLowerCase();
+    const inQueue=planning.find(p=>p.queue&&!p.fait&&((form.recetteId&&p.recette_id===form.recetteId)||norm(p.recette||p.repas)===norm(form.recetteQuery)));
+    if(inQueue){
+      if(form.queue){
+        toast(`"${form.recetteQuery}" est déjà dans la file d'attente`);
+      }else{
+        // On planifie l'entrée existante plutôt que d'en créer une seconde (sinon doublon dans la file).
+        await notionUpdate(inQueue.id,{
+          "Date":nDate(form.date),"Moment":nSel(form.moment),"Portions":nNum(form.portions),"File d'attente":nCheck(false),
+          ...(form.notes?{"Notes":nText(form.notes)}:{}),
+        });
+        if(!alerteSiPerime(inQueue.id,form.date,form.recetteQuery))toast(`"${form.recetteQuery}" sorti de la file et planifié ✓`);
+      }
+      setSaving(false);setShowForm(false);
+      setForm({recetteQuery:"",recetteId:"",moment:"Dîner",portions:DEFAULT_PORTIONS,notes:"",date:"",queue:false});
+      setCache("planning",null);load(true,true);
+      return;
+    }
     const targetDate=form.queue?(()=>{const now=new Date();const day=now.getDay();const nextMonday=new Date(now);nextMonday.setDate(now.getDate()+(day===0?1:8-day));return localISO(nextMonday);})():form.date;
     await notionCreate(DB_PLANNING,{
       "Repas":nTitle(form.recetteQuery),"Date":nDate(targetDate),"Moment":nSel(form.moment),
@@ -302,9 +264,26 @@ export function PlanningTab({toast}){
     const updated=planning.map(p=>p.id===item.id?{...p,date:targetDate,moment,queue:false}:p);
     setPlanning(updated);setCache("planning",updated);
     notionUpdate(item.id,{"Date":nDate(targetDate),"Moment":nSel(moment),"File d'attente":nCheck(false)});
-    toast(`"${item.recette||item.repas}" déplacé ✓`);
+    if(!alerteSiPerime(item.id,targetDate,item.recette||item.repas))toast(`"${item.recette||item.repas}" déplacé ✓`);
     setDragItem(null);setDragOver(null);
   };
+
+  // Glisser tactile (appui long) — même destination que le glisser souris.
+  const dropTo=(key,item)=>{
+    if(key==="queue"){
+      if(item.queue)return;
+      const updated=planning.map(p=>p.id===item.id?{...p,queue:true,date:null}:p);
+      setPlanning(updated);setCache("planning",updated);
+      notionUpdate(item.id,{"File d'attente":nCheck(true),"Date":nDate(null)});
+      toast(`"${item.recette||item.repas}" remis en file d'attente ✓`);
+    }else handleDrop(key,undefined,item);
+  };
+  const startTouch=useTouchDrag({
+    onDragStart:item=>setDragItem(item),
+    onOver:key=>setDragOver(key),
+    onDrop:(key,item)=>dropTo(key,item),
+    onDragEnd:()=>{setDragItem(null);setDragOver(null);},
+  });
 
   const isToday=d=>d.toDateString()===new Date().toDateString();
   const isPast=d=>d<new Date()&&!isToday(d);
@@ -376,7 +355,7 @@ export function PlanningTab({toast}){
               const meals=getMeals(date);const today=isToday(date);const past=isPast(date);
               const dropKey=localISO(date);
               const over=dragOver===dropKey;
-              const ctx={planning,setPlanning,dragItem,setDragItem,setDragOver,handleDrop,touchDragRef,confirmCuisine,confirming,toast,
+              const ctx={dragItem,setDragItem,startTouch,confirmCuisine,confirming,perimesAvant,
                 onView:meal=>{const r=recettes.find(x=>x.id===meal.recette_id||x.nom===(meal.recette||meal.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(meal);}},
                 onMoveToQueue:meal=>{
                   const updated=planning.map(p=>p.id===meal.id?{...p,queue:true,date:null}:p);
@@ -434,41 +413,14 @@ export function PlanningTab({toast}){
             </div>
             {queueItems.length===0&&<div style={{fontSize:12,color:"var(--subtle)",textAlign:"center",padding:"8px 0"}}>Vide — glisse ici pour mettre en attente</div>}
             <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-              {queueItems.map((m,i)=>(
-                <div key={i} draggable onDragStart={()=>setDragItem(m)} onDragEnd={()=>setDragItem(null)}
-                  onTouchStart={(e)=>{
-                    const touch=e.touches[0];
-                    const ghost=e.currentTarget.cloneNode(true);
-                    ghost.style.cssText=`position:fixed;top:${touch.clientY-20}px;left:${touch.clientX-60}px;opacity:0.85;z-index:9999;pointer-events:none;border-radius:20px;padding:6px 12px;`;
-                    document.body.appendChild(ghost);
-                    touchDragRef.current={item:m,ghost};
-                    setDragItem(m);
-                  }}
-                  onTouchMove={(e)=>{
-                    if(!touchDragRef.current)return;
-                    e.preventDefault();
-                    const touch=e.touches[0];
-                    touchDragRef.current.ghost.style.top=touch.clientY-20+"px";
-                    touchDragRef.current.ghost.style.left=touch.clientX-60+"px";
-                    const el=document.elementFromPoint(touch.clientX,touch.clientY);
-                    const zone=el?.closest("[data-dropzone]");
-                    setDragOver(zone?.dataset.dropzone||null);
-                  }}
-                  onTouchEnd={(e)=>{
-                    if(!touchDragRef.current)return;
-                    const touch=e.changedTouches[0];
-                    const el=document.elementFromPoint(touch.clientX,touch.clientY);
-                    const zone=el?.closest("[data-dropzone]");
-                    if(zone&&zone.dataset.dropzone!=="queue"){
-                      handleDrop(zone.dataset.dropzone,undefined,touchDragRef.current.item);
-                    }
-                    touchDragRef.current.ghost.remove();
-                    touchDragRef.current=null;
-                    setDragItem(null);setDragOver(null);
-                  }}
-                  style={{padding:"8px 10px 8px 14px",background:"var(--bg)",boxShadow:"0 0 0 1px rgba(28,25,23,0.08)",borderRadius:999,fontSize:13,fontWeight:600,color:"var(--text)",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,touchAction:"none"}}>
+              {queueItems.map(m=>(
+                <div key={m.id} draggable={!isCoarsePointer()} onDragStart={()=>setDragItem(m)} onDragEnd={()=>setDragItem(null)}
+                  onTouchStart={e=>startTouch(e,m)} onContextMenu={e=>e.preventDefault()}
+                  style={{padding:"8px 10px 8px 14px",background:"var(--bg)",boxShadow:"0 0 0 1px rgba(28,25,23,0.08)",borderRadius:999,fontSize:13,fontWeight:600,color:"var(--text)",cursor:"grab",display:"flex",alignItems:"center",gap:6,opacity:dragItem?.id===m.id?0.4:1,WebkitUserSelect:"none",userSelect:"none",WebkitTouchCallout:"none"}}>
                   <span onClick={e=>{e.stopPropagation();const r=recettes.find(x=>x.id===m.recette_id||x.nom===(m.recette||m.repas));if(r){setSelectedMealRecette(r);setSelectedMealPlanning(m);}}} style={{cursor:"pointer",flex:1}}>
                     <Icon name="drag" size={10}/>{m.recette||m.repas}
+                    {(()=>{const l=liesA(m.id).filter(f=>f.peremption).sort((a,b)=>a.peremption.localeCompare(b.peremption))[0];if(!l)return null;const j=joursAvant(l.peremption);
+                      return <span style={{marginLeft:6,fontSize:11,fontWeight:700,color:j<=2?"#DC2626":"#C2622D"}}>⏳ {j<0?"périmé":j===0?"auj.":`${j} j`}</span>;})()}
                   </span>
                   <button onClick={e=>{e.stopPropagation();removeFromQueue(m);}} onTouchStart={e=>e.stopPropagation()} title="Retirer de la file" style={{background:"none",border:"none",cursor:"pointer",color:MOMENT_COLORS[m.moment]||"var(--subtle)",fontSize:14,lineHeight:1,padding:"0 2px",opacity:0.7,fontFamily:"inherit"}}>✕</button>
                 </div>
